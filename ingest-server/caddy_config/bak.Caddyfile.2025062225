@@ -1,0 +1,9 @@
+ingest.verdegris.eu {
+    reverse_proxy ingest-server-ingest-1:8000
+    tls chpa35@gmail.com
+}
+
+devices.verdegris.eu {
+    reverse_proxy device-server:9000
+    tls chpa35@gmail.com
+}

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  ingest:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=ingest
+      - POSTGRES_USER=ingestuser
+      - POSTGRES_PASSWORD=ingestpass
+    depends_on:
+      - postgres
+    networks:
+      - ingest-net
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ingest
+      POSTGRES_USER: ingestuser
+      POSTGRES_PASSWORD: ingestpass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ingest-net
+
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./caddy_config/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - ingest
+    networks:
+      - ingest-net  # <-- key line: caddy joins the same network
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  ingest-net:

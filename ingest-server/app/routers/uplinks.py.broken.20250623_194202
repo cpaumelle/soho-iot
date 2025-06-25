@@ -1,0 +1,66 @@
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
+import os
+import psycopg2
+import json
+from datetime import datetime
+
+router = APIRouter()
+
+DB_HOST = os.environ.get("POSTGRES_HOST", "localhost")
+DB_NAME = os.environ.get("POSTGRES_DB", "ingest_db")
+DB_USER = os.environ.get("POSTGRES_USER", "ingestuser")
+DB_PASS = os.environ.get("POSTGRES_PASSWORD", "secret")
+
+def get_conn():
+    return psycopg2.connect(
+        host=DB_HOST,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS
+    )
+
+@router.post("/uplink")
+async def uplink_handler(request: Request):
+    try:
+        # Attempt to parse JSON body
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        actility_payload = body.get("DevEUI_uplink", body)
+
+        # Extract fields from JSON payload
+        deveui      = actility_payload.get("DevEUI")
+        payload_hex = actility_payload.get("payload_hex")
+        timestamp   = actility_payload.get("Time")
+
+        # If required fields missing, fall back to query parameters
+        if not (deveui and payload_hex):
+            qp = request.query_params
+            deveui      = deveui      or qp.get("LrnDevEui") or qp.get("DevEUI")
+            payload_hex = payload_hex or qp.get("payload_hex") or qp.get("payloadHex")
+            timestamp   = timestamp   or qp.get("Time")
+            # Rebuild minimal payload to capture query parameters
+            actility_payload = dict(qp)
+
+        # Validate final presence of required fields
+        if not (deveui and payload_hex):
+            raise ValueError("Missing DevEUI or payload_hex")
+
+        # Determine received timestamp
+        received_time = timestamp or datetime.utcnow().isoformat()
+
+        # Insert into database
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO raw_uplinks (deveui, received_at, payload) VALUES (%s, %s, %s)",
+                    (deveui, received_time, json.dumps(actility_payload))
+                )
+
+        return JSONResponse(status_code=200, content={})
+
+    except Exception as e:
+        # Return a 400 with the error detail
+        raise HTTPException(status_code=400, detail=str(e))

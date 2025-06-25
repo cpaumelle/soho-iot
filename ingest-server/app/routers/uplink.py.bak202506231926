@@ -1,0 +1,32 @@
+from fastapi import APIRouter, Request, HTTPException
+import httpx
+import os
+
+router = APIRouter()
+
+DEVICE_MANAGER_URL = os.environ.get("DEVICE_MANAGER_URL", "https://devices.verdegris.eu/process-uplink")
+DEVICE_MANAGER_API_KEY = os.environ.get("DEVICE_MANAGER_API_KEY", "supersecrettoken123")
+
+@router.post("/forward-uplink")
+async def forward_uplink(request: Request):
+    try:
+        data = await request.json()
+
+        uplink = data.get("DevEUI_uplink", {})
+        deveui = uplink.get("DevEUI")
+
+        if not deveui:
+            raise ValueError("Missing DevEUI in payload")
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                DEVICE_MANAGER_URL,
+                headers={"x-api-key": DEVICE_MANAGER_API_KEY},
+                json=uplink
+            )
+            resp.raise_for_status()
+
+        return {"status": "forwarded"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
