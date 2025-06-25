@@ -1,0 +1,38 @@
+
+services:
+  ingest:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ingest
+      POSTGRES_USER: ingestuser
+      POSTGRES_PASSWORD: ingestpass
+      POSTGRES_PORT: 5432
+    depends_on:
+      - postgres
+    networks:
+      - ingest-net
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ingest
+      POSTGRES_USER: ingestuser
+      POSTGRES_PASSWORD: ingestpass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - ingest-net
+
+volumes:
+  pgdata:
+
+networks:
+  ingest-net:

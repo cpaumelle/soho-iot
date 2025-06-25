@@ -1,0 +1,73 @@
+from fastapi import FastAPI, HTTPException, Request
+import psycopg2
+import os
+import json
+from datetime import datetime
+from app.routers import uplinks
+
+app = FastAPI()
+app.include_router(uplinks.router)
+
+# Database config from environment variables
+DB_HOST = os.environ.get("POSTGRES_HOST", "localhost")
+DB_NAME = os.environ.get("POSTGRES_DB", "ingest")
+DB_USER = os.environ.get("POSTGRES_USER", "ingestuser")
+DB_PASS = os.environ.get("POSTGRES_PASSWORD", "ingestpass")
+
+def get_conn():
+    return psycopg2.connect(
+        host=DB_HOST,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS
+    )
+
+@app.post("/uplink")
+async def receive_uplink(req: Request):
+    try:
+        body = await req.json()
+        uplink = body.get("DevEUI_uplink", {})
+        deveui = uplink.get("DevEUI")
+        timestamp = uplink.get("Time")
+
+        if not all([deveui, timestamp]):
+            raise ValueError("Missing one of DevEUI or Time")
+
+        # Parse timestamp
+        received_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+
+        # Store the entire uplink JSON
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO raw_uplinks (deveui, received_at, payload) VALUES (%s, %s, %s)",
+                    (deveui, received_at, json.dumps(uplink))
+                )
+
+        # Forward to device manager — non-blocking
+        try:
+            await uplinks.forward_uplink(req)
+        except Exception as fe:
+            print(f"Forwarding failed: {fe}")
+
+        return {"status": "stored-and-forwarded"}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/uplink/raw/{deveui}")
+async def get_raw_uplink(deveui: str):
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, received_at, payload FROM raw_uplinks WHERE deveui = %s ORDER BY received_at DESC LIMIT 100",
+                    (deveui,)
+                )
+                rows = cur.fetchall()
+        return [
+            {"id": r[0], "received_at": r[1].isoformat(), "payload": r[2]}
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
