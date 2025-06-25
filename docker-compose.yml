@@ -1,0 +1,55 @@
+services:
+  reverse-proxy:
+    image: caddy:latest
+    container_name: iot-reverse-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy_config/Caddyfile:/etc/caddyfile
+      - caddy_data:/data
+      - caddy_internal_config:/config
+    networks:
+      - verdegris-iot-network-pi3-fr-dnr
+    depends_on:
+      - ingest-service
+    restart: unless-stopped
+
+  ingest-service:
+    image: ghcr.io/cpaumelle/ingest-server:latest
+    container_name: ingest-service
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql://ingestuser:ingestpass@ingest-database:5432/ingest_db"
+      POSTGRES_HOST: "ingest-database"
+      POSTGRES_DB: "ingest_db"
+      POSTGRES_USER: "ingestuser"
+      POSTGRES_PASSWORD: "ingestpass"
+    networks:
+      - verdegris-iot-network-pi3-fr-dnr
+    depends_on:
+      - ingest-database
+    restart: unless-stopped
+
+  ingest-database:
+    image: postgres:15
+    container_name: ingest-database
+    environment:
+      POSTGRES_DB: ingest_db
+      POSTGRES_USER: ingestuser
+      POSTGRES_PASSWORD: ingestpass
+    volumes:
+      - ingest_db_data:/var/lib/postgresql/data
+      - ./ingest-server/initdb:/docker-entrypoint-initdb.d
+    networks:
+      - verdegris-iot-network-pi3-fr-dnr
+    restart: unless-stopped
+
+volumes:
+  ingest_db_data:
+  caddy_data:
+  caddy_internal_config:
+
+networks:
+  verdegris-iot-network-pi3-fr-dnr:

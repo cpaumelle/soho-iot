@@ -1,0 +1,7 @@
+ingest-prod.verdegris.eu {
+  reverse_proxy ingest:8000
+  log {
+    output stdout
+    level info
+  }
+}
