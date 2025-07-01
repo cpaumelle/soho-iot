@@ -8,3 +8,6 @@ __pycache__/
 *.bak*
 *.tar.gz
 *.DS_Store
+device-manager/device-manager-v1.tar
+ingest-server/cron.log
+device-manager-backup-20250619_0736.tar.gz
