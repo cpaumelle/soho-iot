@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Manager - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .device-type-icon {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .status-configured { background-color: #28a745; }
+        .status-needs-location { background-color: #fd7e14; }
+        .status-needs-setup { background-color: #dc3545; }
+        .status-orphan { background-color: #ffc107; }
+        .status-decommissioned { background-color: #6c757d; }
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+        .sortable:hover {
+            background-color: #f8f9fa;
+        }
+        .sortable.sort-asc::after {
+            content: ' ▲';
+            font-size: 0.8em;
+        }
+        .sortable.sort-desc::after {
+            content: ' ▼';
+            font-size: 0.8em;
+        }
+        .device-row.selected {
+            background-color: #e3f2fd;
+        }
+        .bulk-actions {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+        }
+        .connectivity-indicator {
+            position: relative;
+            display: inline-block;
+        }
+        .connectivity-dot {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+        .connected { background-color: #28a745; }
+        .disconnected { background-color: #dc3545; }
+        .unknown { background-color: #6c757d; }
+        .device-card {
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .device-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        .filter-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="dashboard.html">Verdegris IoT Platform V5</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link" href="device-types.html">Device Types</a>
+                <a class="nav-link" href="sites.html">Sites</a>
+                <a class="nav-link" href="locations.html">Locations</a>
+                <a class="nav-link active" href="devices.html">Device Locations</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Device Manager <span class="badge bg-success">V5 Enhanced</span></h1>
+                        <p class="text-muted">Advanced device management with computed status system</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-info" onclick="toggleView()">
+                            <span id="view-toggle-icon">📋</span> <span id="view-toggle-text">Table View</span>
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="loadDevices()">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enhanced Search and Filter Controls -->
+        <div class="filter-section">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="input-group">
+                        <span class="input-group-text">🔍</span>
+                        <input type="text" class="form-control" id="searchInput" placeholder="Search by DevEUI, name, or location..." onkeyup="filterDevices()">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <select id="status-filter" class="form-select" onchange="filterDevices()">
+                        <option value="">All Status</option>
+                        <option value="CONFIGURED">✅ Configured</option>
+                        <option value="NEEDS_LOCATION">📍 Needs Location</option>
+                        <option value="NEEDS_SETUP">⚙️ Needs Setup</option>
+                        <option value="ORPHAN">⚠️ Orphaned</option>
+                        <option value="DECOMMISSIONED">📦 Decommissioned</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="type-filter" class="form-select" onchange="filterDevices()">
+                        <option value="">All Types</option>
+                        <!-- Will be populated dynamically -->
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="connectivity-filter" class="form-select" onchange="filterDevices()">
+                        <option value="">All Connectivity</option>
+                        <option value="connected">🟢 Connected</option>
+                        <option value="disconnected">🔴 Disconnected</option>
+                        <option value="unknown">⚫ Unknown</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">Clear All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Actions Bar -->
+        <div id="bulk-actions" class="bulk-actions d-none">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong><span id="selected-count">0</span> devices selected</strong>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-primary btn-sm" onclick="bulkAssignDevices()">
+                        📍 Bulk Assign
+                    </button>
+                    <button class="btn btn-warning btn-sm" onclick="bulkChangeStatus('DECOMMISSIONED')">
+                        📦 Bulk Decommission
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearSelection()">
+                        Clear Selection
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading devices...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Devices</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadDevices()">Retry</button>
+        </div>
+
+        <!-- Device Assignment Modal -->
+        <div id="assignment-form" class="card mb-4 d-none">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    📍 <span id="assignment-title">Assign Device to Location</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <form id="device-assignment-form">
+                    <input type="hidden" id="assign-deveuis">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Devices</label>
+                                <div id="assign-device-info" class="form-control-plaintext">-</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="assign-zone" class="form-label">Zone *</label>
+                                <select class="form-select" id="assign-zone" required>
+                                    <option value="">Select a zone...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="single-name-section">
+                        <label for="assign-name" class="form-label">Device Name</label>
+                        <input type="text" class="form-control" id="assign-name" placeholder="Optional display name">
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            📍 <span id="assign-button-text">Assign Device</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="cancelAssignment()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Device Statistics -->
+        <div id="device-stats" class="row mb-4 d-none">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h4 id="total-count">0</h4>
+                                <p class="mb-0">Total Devices</p>
+                            </div>
+                            <span style="font-size: 2rem;">📱</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h4 id="configured-count">0</h4>
+                                <p class="mb-0">Configured</p>
+                            </div>
+                            <span style="font-size: 2rem;">✅</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h4 id="needs-location-count">0</h4>
+                                <p class="mb-0">Needs Location</p>
+                            </div>
+                            <span style="font-size: 2rem;">📍</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h4 id="needs-setup-count">0</h4>
+                                <p class="mb-0">Needs Setup</p>
+                            </div>
+                            <span style="font-size: 2rem;">⚙️</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Table View -->
+        <div id="devices-table-view" class="d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Devices</h5>
+                    <div class="d-flex align-items-center gap-3">
+                        <small class="text-muted" id="devices-count">0 devices</small>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="select-all" onchange="toggleSelectAll()">
+                            <label class="form-check-label" for="select-all">Select All</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="40px"></th>
+                                    <th class="sortable" onclick="sortDevices('deveui')">
+                                        Device EUI <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortDevices('name')">
+                                        Name <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortDevices('device_type')">
+                                        Type <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortDevices('status')">
+                                        Status <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortDevices('location')">
+                                        Location <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortDevices('last_uplink')">
+                                        Last Seen <span class="sort-arrow"></span>
+                                    </th>
+                                    <th width="120px">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="devices-table-body">
+                                <!-- Devices will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-devices" class="text-center py-4 d-none">
+                        <p class="text-muted">No devices found matching the current filters.</p>
+                        <button class="btn btn-outline-primary" onclick="clearFilters()">Clear Filters</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Card View -->
+        <div id="devices-card-view" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Devices</h5>
+                <small class="text-muted" id="devices-count-cards">0 devices</small>
+            </div>
+            <div class="row" id="devices-card-container">
+                <!-- Device cards will be populated here -->
+            </div>
+            <div id="no-devices-cards" class="text-center py-4 d-none">
+                <p class="text-muted">No devices found matching the current filters.</p>
+                <button class="btn btn-outline-primary" onclick="clearFilters()">Clear Filters</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let allDevices = [];
+        let filteredDevices = [];
+        let availableZones = [];
+        let selectedDevices = new Set();
+        let currentSort = { field: 'deveui', direction: 'asc' };
+        let currentView = 'table';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDevices();
+            loadZones();
+        });
+
+        async function loadDevices() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const tableView = document.getElementById('devices-table-view');
+            const cardView = document.getElementById('devices-card-view');
+            const stats = document.getElementById('device-stats');
+
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            tableView.classList.add('d-none');
+            cardView.classList.add('d-none');
+            stats.classList.add('d-none');
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const devices = await api.get('/v1/devices');
+
+                allDevices = devices;
+                populateTypeFilter();
+                updateStats(devices);
+                filterDevices();
+
+                loading.classList.add('d-none');
+                if (currentView === 'table') {
+                    tableView.classList.remove('d-none');
+                } else {
+                    cardView.classList.remove('d-none');
+                }
+                stats.classList.remove('d-none');
+
+            } catch (err) {
+                console.error('Error loading devices:', err);
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 'Failed to load devices: ' + err.message;
+            }
+        }
+
+        async function loadZones() {
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const zones = await api.get('/v1/zones');
+                availableZones = zones;
+                populateZoneSelector();
+            } catch (err) {
+                console.error('Error loading zones:', err);
+            }
+        }
+
+        function populateZoneSelector() {
+            const select = document.getElementById('assign-zone');
+            select.innerHTML = '<option value="">Select a zone...</option>';
+            availableZones.forEach(zone => {
+                const option = document.createElement('option');
+                option.value = zone.id;
+                option.textContent = zone.full_path;
+                select.appendChild(option);
+            });
+        }
+
+        function populateTypeFilter() {
+            const typeFilter = document.getElementById('type-filter');
+            if (!typeFilter || !allDevices) return;
+
+            const types = [...new Set(allDevices
+                .map(d => d.device_type)
+                .filter(type => type && type.trim())
+            )].sort();
+
+            typeFilter.innerHTML = '<option value="">All Types</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = getDeviceTypeIcon(type) + ' ' + type;
+                typeFilter.appendChild(option);
+            });
+        }
+
+        function updateStats(devices) {
+            const stats = {
+                total: devices.length,
+                configured: devices.filter(d => d.status === 'CONFIGURED').length,
+                needs_location: devices.filter(d => d.status === 'NEEDS_LOCATION').length,
+                needs_setup: devices.filter(d => d.status === 'NEEDS_SETUP').length,
+                orphan: devices.filter(d => d.status === 'ORPHAN').length,
+                decommissioned: devices.filter(d => d.status === 'DECOMMISSIONED').length
+            };
+
+            document.getElementById('total-count').textContent = stats.total;
+            document.getElementById('configured-count').textContent = stats.configured;
+            document.getElementById('needs-location-count').textContent = stats.needs_location;
+            document.getElementById('needs-setup-count').textContent = stats.needs_setup;
+        }
+
+        function filterDevices() {
+            if (!allDevices || !Array.isArray(allDevices)) {
+                filteredDevices = [];
+                displayDevices();
+                updateDevicesCount();
+                return;
+            }
+
+            const searchTerm = document.getElementById('searchInput')?.value?.toLowerCase()?.trim() || '';
+            const statusFilter = document.getElementById('status-filter')?.value || '';
+            const typeFilter = document.getElementById('type-filter')?.value || '';
+            const connectivityFilter = document.getElementById('connectivity-filter')?.value || '';
+
+            filteredDevices = allDevices.filter(device => {
+                if (!device) return false;
+
+                if (searchTerm) {
+                    const searchText = [
+                        device.deveui,
+                        device.name,
+                        device.location?.site,
+                        device.location?.floor,
+                        device.location?.room,
+                        device.location?.zone
+                    ].filter(Boolean).join(' ').toLowerCase();
+
+                    if (!searchText.includes(searchTerm)) return false;
+                }
+
+                if (statusFilter && device.status !== statusFilter) return false;
+                if (typeFilter && device.device_type !== typeFilter) return false;
+
+                if (connectivityFilter) {
+                    const connectivity = getDeviceConnectivity(device);
+                    if (connectivity !== connectivityFilter) return false;
+                }
+
+                return true;
+            });
+
+            applySorting();
+            displayDevices();
+            updateDevicesCount();
+            clearSelection();
+        }
+
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('status-filter').value = '';
+            document.getElementById('type-filter').value = '';
+            document.getElementById('connectivity-filter').value = '';
+            filterDevices();
+        }
+
+        function sortDevices(field) {
+            if (currentSort.field === field) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.direction = 'asc';
+            }
+
+            updateSortIcons();
+            applySorting();
+            displayDevices();
+        }
+
+        function applySorting() {
+            filteredDevices.sort((a, b) => {
+                let aVal, bVal;
+
+                switch (currentSort.field) {
+                    case 'location':
+                        aVal = getLocationText(a);
+                        bVal = getLocationText(b);
+                        break;
+                    case 'last_uplink':
+                        aVal = a.last_uplink ? new Date(a.last_uplink) : new Date(0);
+                        bVal = b.last_uplink ? new Date(b.last_uplink) : new Date(0);
+                        break;
+                    default:
+                        aVal = (a[currentSort.field] || '').toString().toLowerCase();
+                        bVal = (b[currentSort.field] || '').toString().toLowerCase();
+                }
+
+                if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function updateSortIcons() {
+            document.querySelectorAll('.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+
+            const currentHeader = document.querySelector(`[onclick="sortDevices('${currentSort.field}')"]`);
+            if (currentHeader) {
+                currentHeader.classList.add(`sort-${currentSort.direction}`);
+            }
+        }
+
+        function updateDevicesCount() {
+            const count = filteredDevices.length;
+            const total = allDevices.length;
+            const countText = count === total ? `${count} devices` : `${count} of ${total} devices`;
+            document.getElementById('devices-count').textContent = countText;
+            document.getElementById('devices-count-cards').textContent = countText;
+        }
+
+        function displayDevices() {
+            if (currentView === 'table') {
+                displayDevicesTable();
+            } else {
+                displayDevicesCards();
+            }
+        }
+
+        function displayDevicesTable() {
+            const tbody = document.getElementById('devices-table-body');
+            const noDevices = document.getElementById('no-devices');
+
+            if (!filteredDevices || filteredDevices.length === 0) {
+                tbody.innerHTML = '';
+                noDevices.classList.remove('d-none');
+                return;
+            }
+
+            noDevices.classList.add('d-none');
+
+            tbody.innerHTML = filteredDevices.map(device => {
+                const isSelected = selectedDevices.has(device.deveui);
+                const rowClass = isSelected ? 'device-row selected' : 'device-row';
+                const connectivity = getDeviceConnectivity(device);
+
+                return `
+                    <tr class="${rowClass}">
+                        <td>
+                            <input type="checkbox" class="form-check-input device-checkbox"
+                                   value="${device.deveui}" ${isSelected ? 'checked' : ''}
+                                   onchange="toggleDeviceSelection('${device.deveui}')">
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <span class="connectivity-indicator">
+                                    📱
+                                    <span class="connectivity-dot ${connectivity}"></span>
+                                </span>
+                                <code class="ms-2">${escapeHtml(device.deveui)}</code>
+                            </div>
+                        </td>
+                        <td>${escapeHtml(device.name || '-')}</td>
+                        <td>
+                            <span class="device-type-icon">${getDeviceTypeIcon(device.device_type)}</span>
+                            ${escapeHtml(device.device_type || '-')}
+                        </td>
+                        <td>${getStatusBadge(device.status)}</td>
+                        <td>${getLocationDisplay(device)}</td>
+                        <td>${formatDate(device.last_uplink)}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="assignDevice('${device.deveui}')" title="Assign to Location">
+                                    📍
+                                </button>
+                                <button class="btn btn-outline-info" onclick="viewDevice('${device.deveui}')" title="View Details">
+                                    👁️
+                                </button>
+                                ${device.status !== 'DECOMMISSIONED' ?
+                                    `<button class="btn btn-outline-warning" onclick="decommissionDevice('${device.deveui}')" title="Decommission">
+                                        📦
+                                    </button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function displayDevicesCards() {
+            const container = document.getElementById('devices-card-container');
+            const noDevices = document.getElementById('no-devices-cards');
+
+            if (!filteredDevices || filteredDevices.length === 0) {
+                container.innerHTML = '';
+                noDevices.classList.remove('d-none');
+                return;
+            }
+
+            noDevices.classList.add('d-none');
+
+            container.innerHTML = filteredDevices.map(device => {
+                const isSelected = selectedDevices.has(device.deveui);
+                const cardClass = isSelected ? 'device-card border-primary' : 'device-card';
+                const connectivity = getDeviceConnectivity(device);
+
+                return `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card ${cardClass}" onclick="toggleDeviceSelection('${device.deveui}')">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <div class="d-flex align-items-center">
+                                        <span class="connectivity-indicator">
+                                            ${getDeviceTypeIcon(device.device_type)}
+                                            <span class="connectivity-dot ${connectivity}"></span>
+                                        </span>
+                                        <div class="ms-2">
+                                            <h6 class="card-title mb-0">${escapeHtml(device.name || device.deveui)}</h6>
+                                            <small class="text-muted">${escapeHtml(device.deveui)}</small>
+                                        </div>
+                                    </div>
+                                    <input type="checkbox" class="form-check-input" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation()">
+                                </div>
+                                <div class="mb-2">
+                                    ${getStatusBadge(device.status)}
+                                    <small class="text-muted ms-2">${escapeHtml(device.device_type || 'Unknown')}</small>
+                                </div>
+                                <div class="mb-2">
+                                    <small class="text-muted d-block">${getLocationDisplay(device)}</small>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">
+                                        Last: ${formatDate(device.last_uplink)}
+                                    </small>
+                                    <div class="btn-group btn-group-sm" onclick="event.stopPropagation()">
+                                        <button class="btn btn-outline-primary btn-sm" onclick="assignDevice('${device.deveui}')" title="Assign">
+                                            📍
+                                        </button>
+                                        <button class="btn btn-outline-info btn-sm" onclick="viewDevice('${device.deveui}')" title="View">
+                                            👁️
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleView() {
+            currentView = currentView === 'table' ? 'cards' : 'table';
+
+            const tableView = document.getElementById('devices-table-view');
+            const cardView = document.getElementById('devices-card-view');
+            const toggleIcon = document.getElementById('view-toggle-icon');
+            const toggleText = document.getElementById('view-toggle-text');
+
+            if (currentView === 'table') {
+                tableView.classList.remove('d-none');
+                cardView.classList.add('d-none');
+                toggleIcon.textContent = '📋';
+                toggleText.textContent = 'Table View';
+            } else {
+                tableView.classList.add('d-none');
+                cardView.classList.remove('d-none');
+                toggleIcon.textContent = '📇';
+                toggleText.textContent = 'Card View';
+            }
+
+            displayDevices();
+        }
+
+        function toggleDeviceSelection(deveui) {
+            if (selectedDevices.has(deveui)) {
+                selectedDevices.delete(deveui);
+            } else {
+                selectedDevices.add(deveui);
+            }
+            updateSelectionUI();
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('select-all');
+
+            if (selectAll.checked) {
+                filteredDevices.forEach(device => selectedDevices.add(device.deveui));
+            } else {
+                selectedDevices.clear();
+            }
+
+            updateSelectionUI();
+        }
+
+        function clearSelection() {
+            selectedDevices.clear();
+            updateSelectionUI();
+        }
+
+        function updateSelectionUI() {
+            const bulkActions = document.getElementById('bulk-actions');
+            const selectedCount = document.getElementById('selected-count');
+            const selectAll = document.getElementById('select-all');
+
+            if (selectedDevices.size > 0) {
+                bulkActions.classList.remove('d-none');
+                selectedCount.textContent = selectedDevices.size;
+            } else {
+                bulkActions.classList.add('d-none');
+            }
+
+            if (selectedDevices.size === 0) {
+                selectAll.checked = false;
+                selectAll.indeterminate = false;
+            } else if (selectedDevices.size === filteredDevices.length) {
+                selectAll.checked = true;
+                selectAll.indeterminate = false;
+            } else {
+                selectAll.checked = false;
+                selectAll.indeterminate = true;
+            }
+
+            document.querySelectorAll('.device-checkbox').forEach(checkbox => {
+                const isSelected = selectedDevices.has(checkbox.value);
+                checkbox.checked = isSelected;
+
+                const row = checkbox.closest('tr');
+                if (row) {
+                    if (isSelected) {
+                        row.classList.add('selected');
+                    } else {
+                        row.classList.remove('selected');
+                    }
+                }
+            });
+
+            displayDevices();
+        }
+
+        function getDeviceTypeIcon(type) {
+            const icons = {
+                'sensor': '📡',
+                'gateway': '🌐',
+                'actuator': '🔧',
+                'camera': '📹',
+                'meter': '📊',
+                'tracker': '📍',
+                'controller': '🎛️'
+            };
+            return icons[type?.toLowerCase()] || '📱';
+        }
+
+        function getDeviceConnectivity(device) {
+            if (!device || !device.last_uplink) return 'unknown';
+
+            try {
+                const lastSeen = new Date(device.last_uplink);
+                if (isNaN(lastSeen.getTime())) return 'unknown';
+
+                const now = new Date();
+                const hoursSinceLastSeen = (now - lastSeen) / (1000 * 60 * 60);
+
+                if (hoursSinceLastSeen < 1) return 'connected';
+                if (hoursSinceLastSeen < 24) return 'disconnected';
+                return 'unknown';
+            } catch {
+                return 'unknown';
+            }
+        }
+
+        function getStatusBadge(status) {
+            const indicators = {
+                'CONFIGURED': '<span class="status-indicator status-configured"></span><span class="badge bg-success">Configured</span>',
+                'NEEDS_LOCATION': '<span class="status-indicator status-needs-location"></span><span class="badge bg-warning">Needs Location</span>',
+                'NEEDS_SETUP': '<span class="status-indicator status-needs-setup"></span><span class="badge bg-danger">Needs Setup</span>',
+                'ORPHAN': '<span class="status-indicator status-orphan"></span><span class="badge bg-warning">Orphaned</span>',
+                'DECOMMISSIONED': '<span class="status-indicator status-decommissioned"></span><span class="badge bg-secondary">Decommissioned</span>'
+            };
+            return indicators[status] || '<span class="badge bg-light text-dark">Unknown</span>';
+        }
+
+        function getLocationDisplay(device) {
+            if (device.location && device.location.zone) {
+                return `
+                    <small>
+                        ${escapeHtml(device.location.site || '')} >
+                        ${escapeHtml(device.location.floor || '')} >
+                        ${escapeHtml(device.location.room || '')} >
+                        <strong>${escapeHtml(device.location.zone)}</strong>
+                    </small>
+                `;
+            }
+            return '<span class="text-muted">Unassigned</span>';
+        }
+
+        function getLocationText(device) {
+            if (device.location && device.location.zone) {
+                return [device.location.site, device.location.floor, device.location.room, device.location.zone]
+                    .filter(Boolean).join(' > ');
+            }
+            return 'Unassigned';
+        }
+
+        function assignDevice(deveui) {
+            selectedDevices.clear();
+            selectedDevices.add(deveui);
+            bulkAssignDevices();
+        }
+
+        function bulkAssignDevices() {
+            if (selectedDevices.size === 0) return;
+
+            const deviceList = Array.from(selectedDevices);
+            const device = allDevices.find(d => d.deveui === deviceList[0]);
+
+            document.getElementById('assign-deveuis').value = deviceList.join(',');
+            document.getElementById('assignment-title').textContent = 'Assign Device to Location';
+            document.getElementById('assign-device-info').textContent = deviceList[0] + (device?.name ? ' (' + device.name + ')' : '');
+            document.getElementById('assign-button-text').textContent = 'Assign Device';
+            document.getElementById('assign-name').value = device?.name || '';
+            document.getElementById('assign-zone').value = '';
+            document.getElementById('assignment-form').classList.remove('d-none');
+            document.getElementById('assign-zone').focus();
+        }
+
+        function cancelAssignment() {
+            document.getElementById('assignment-form').classList.add('d-none');
+            document.getElementById('device-assignment-form').reset();
+        }
+
+        function viewDevice(deveui) {
+            const device = allDevices.find(d => d.deveui === deveui);
+            if (device) {
+                const connectivity = getDeviceConnectivity(device);
+                const connectivityText = {
+                    'connected': '🟢 Connected',
+                    'disconnected': '🔴 Disconnected',
+                    'unknown': '⚫ Unknown'
+                }[connectivity];
+
+                const details = `
+Device EUI: ${device.deveui}
+Name: ${device.name || 'Not set'}
+Type: ${device.device_type || 'Unknown'}
+Status: ${device.status}
+Connectivity: ${connectivityText}
+Location: ${getLocationText(device)}
+Last Seen: ${formatDate(device.last_uplink)}
+                `.trim();
+                alert(details);
+            }
+        }
+
+        async function decommissionDevice(deveui) {
+            const device = allDevices.find(d => d.deveui === deveui);
+            if (!device) return;
+
+            if (!confirm('Decommission device "' + deveui + '"? This will preserve all historical data but mark the device as inactive.')) {
+                return;
+            }
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                await api.put('/v1/devices/' + deveui, {
+                    ...device,
+                    status: 'DECOMMISSIONED'
+                });
+                await loadDevices();
+            } catch (err) {
+                alert('Failed to decommission device: ' + err.message);
+            }
+        }
+
+        async function bulkChangeStatus(newStatus) {
+            if (selectedDevices.size === 0) return;
+
+            const action = newStatus === 'DECOMMISSIONED' ? 'decommission' : 'change status of';
+            if (!confirm(`${action} ${selectedDevices.size} selected devices?`)) {
+                return;
+            }
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const promises = Array.from(selectedDevices).map(async deveui => {
+                    const device = allDevices.find(d => d.deveui === deveui);
+                    if (device) {
+                        return api.put('/v1/devices/' + deveui, {
+                            ...device,
+                            status: newStatus
+                        });
+                    }
+                });
+
+                await Promise.all(promises);
+                await loadDevices();
+                clearSelection();
+            } catch (err) {
+                alert('Failed to update devices: ' + err.message);
+            }
+        }
+
+        document.getElementById('device-assignment-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+
+            try {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '📍 Assigning...';
+
+                const deveuis = document.getElementById('assign-deveuis').value.split(',');
+                const zoneId = document.getElementById('assign-zone').value;
+                const name = document.getElementById('assign-name').value.trim();
+
+                const api = new APIClient('https://api.sensemy.cloud');
+
+                for (const deveui of deveuis) {
+                    if (name) {
+                        await api.put('/v1/devices/' + deveui, { name });
+                    }
+                    await api.put('/v1/devices/' + deveui + '/location', {
+                        zone_id: parseInt(zoneId)
+                    });
+                }
+
+                await loadDevices();
+                cancelAssignment();
+                clearSelection();
+
+            } catch (err) {
+                alert('Failed to assign devices: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        });
+
+        function formatDate(dateString) {
+            if (!dateString) return 'Never';
+            try {
+                const date = new Date(dateString);
+                return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+            } catch {
+                return 'Invalid date';
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text.toString();
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

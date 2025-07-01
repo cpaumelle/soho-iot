@@ -1,0 +1,10 @@
+backups/
+docker_backups/
+*.pyc
+__pycache__/
+.env
+*.sqlite3
+*.log
+*.bak*
+*.tar.gz
+*.DS_Store

@@ -1,0 +1,170 @@
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from routers import devices
+from analytics_forwarder import AnalyticsForwarder
+import json
+import psycopg2
+import os
+import asyncio
+import uuid
+from datetime import datetime
+
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
+# Global analytics forwarder
+analytics_forwarder = None
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize analytics forwarder on startup"""
+    global analytics_forwarder
+    try:
+        analytics_forwarder = AnalyticsForwarder()
+        await analytics_forwarder.initialize()
+        print("✅ Analytics forwarder initialized successfully")
+    except Exception as e:
+        print(f"❌ Analytics forwarder initialization failed: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup analytics forwarder on shutdown"""
+    global analytics_forwarder
+    if analytics_forwarder:
+        try:
+            await analytics_forwarder.cleanup()
+            print("✅ Analytics forwarder cleanup complete")
+        except Exception as e:
+            print(f"❌ Analytics cleanup failed: {e}")
+
+# Database connection using environment variables
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.getenv('DEVICE_DB_HOST', 'device-database'),
+        database=os.getenv('DEVICE_DB_NAME', 'device_db'),
+        user=os.getenv('DEVICE_DB_USER', 'iot'),
+        password=os.getenv('DEVICE_DB_PASSWORD', 'secret')
+    )
+
+# Allow frontend to access the backend API
+cors_origins = os.getenv("CORS_ORIGINS", "")
+allowed_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register routers with correct prefix
+app.include_router(devices.router, prefix="/v1")
+
+@app.get("/")
+def root():
+    return {"status": "Device Manager API is running"}
+
+@app.post("/process-uplink")
+async def process_uplink(request: Request):
+    """
+    Process uplinks forwarded from ingest service
+    Store processed uplinks in devices.uplinks table
+    """
+    try:
+        body = await request.json()
+        deveui = body.get("DevEUI") or body.get("deveui")
+        timestamp = body.get("Time") or body.get("timestamp")
+
+        if not deveui:
+            raise ValueError("Missing DevEUI in forwarded uplink")
+
+        if timestamp:
+            try:
+                received_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            except:
+                received_at = datetime.now()
+        else:
+            received_at = datetime.now()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT deveui FROM devices.device_registry WHERE deveui = %s", (deveui,))
+                if not cur.fetchone():
+                    cur.execute(
+                        "INSERT INTO devices.device_registry (deveui, status) VALUES (%s, 'ORPHAN') ON CONFLICT (deveui) DO NOTHING",
+                        (deveui,)
+                    )
+                cur.execute(
+                    "INSERT INTO devices.uplinks (deveui, received_at, payload) VALUES (%s, %s, %s)",
+                    (deveui, received_at, json.dumps(body))
+                )
+                conn.commit()
+
+        if analytics_forwarder:
+            try:
+                analytics_uplink_data = {
+                    "id": str(uuid.uuid4()),
+                    "timestamp": received_at.isoformat() + "Z",
+                    "payload_json": body,
+                    "device_id": deveui
+                }
+                analytics_device_context = {
+                    "deveui": deveui,
+                    "name": f"Device-{deveui}",
+                    "device_type_id": 1,
+                    "zone_id": 1
+                }
+                asyncio.create_task(
+                    analytics_forwarder.forward_uplink_background(
+                        analytics_uplink_data,
+                        analytics_device_context
+                    )
+                )
+                analytics_forwarded = True
+            except Exception as e:
+                print(f"Analytics forwarding failed: {e}")
+                analytics_forwarded = False
+        else:
+            analytics_forwarded = False
+
+        return {
+            "status": "processed",
+            "deveui": deveui,
+            "timestamp": received_at.isoformat(),
+            "analytics_forwarded": analytics_forwarded
+        }
+
+    except Exception as e:
+        print(f"Error processing uplink: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """Enhanced health check with analytics forwarder status"""
+    try:
+        analytics_health = {}
+        if analytics_forwarder:
+            try:
+                analytics_health = await analytics_forwarder.health_check()
+            except Exception as e:
+                analytics_health = {"status": "error", "error": str(e)}
+        else:
+            analytics_health = {"status": "not_initialized"}
+
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "analytics_forwarder": analytics_health,
+            "device_manager": "operational",
+            "database": "connected"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }

@@ -1,0 +1,449 @@
+body { 
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f8f9fa;
+}
+
+.card {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  border: none;
+}
+
+.btn-group .btn.active {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: white;
+}
+
+.step-header {
+  color: #495057;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+#payloadPreview {
+  font-size: 0.85rem;
+  background-color: #f8f9fa !important;
+  border: 1px solid #dee2e6;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+#decodedPreview {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.input-group .btn {
+  border-left: none;
+}
+
+.form-text {
+  font-style: italic;
+}
+
+/* Orphan Devices List Styles */
+.orphan-device-item {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-left: 4px solid transparent;
+}
+
+.orphan-device-item:hover {
+  background-color: #f8f9fa;
+  border-left-color: #0d6efd;
+}
+
+.orphan-device-item.active {
+  background-color: #e7f3ff;
+  border-left-color: #0d6efd;
+}
+
+.orphan-device-item .device-id {
+  font-weight: 600;
+  color: #0d6efd;
+}
+
+.orphan-device-item .device-meta {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+.orphan-device-item .status-badge {
+  font-size: 0.75rem;
+}
+
+.status-badge.new {
+  background-color: #28a745;
+}
+
+.status-badge.active {
+  background-color: #17a2b8;
+}
+
+.status-badge.pending {
+  background-color: #6c757d;
+}
+
+@media (max-width: 991.98px) {
+  .col-lg-4, .col-lg-8 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+  
+  .orphan-device-item {
+    margin-bottom: 0.5rem;
+  }
+}
+/* Enhanced device card styling */
+.device-card {
+    background: #ffffff;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.device-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+.device-card.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.device-id {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.recent {
+    background: #fef3cd;
+    color: #92400e;
+}
+
+.status-badge.inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.device-info {
+    margin-bottom: 12px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.info-row .label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.info-row .value {
+    color: #1f2937;
+    font-weight: 600;
+}
+
+.payload-preview {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+}
+
+.payload-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.payload-data {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #374151;
+    margin: 0;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+/* Ensure twinning panel is visible */
+#twinning-panel {
+    display: none;
+}
+
+#twinning-panel.show {
+    display: block;
+}
+
+/* Enhanced device card styling */
+.device-card {
+    background: #ffffff;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.device-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+.device-card.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.device-id {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.recent {
+    background: #fef3cd;
+    color: #92400e;
+}
+
+.status-badge.inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.device-info {
+    margin-bottom: 12px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.info-row .label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.info-row .value {
+    color: #1f2937;
+    font-weight: 600;
+}
+
+.payload-preview {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+}
+
+.payload-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.payload-data {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #374151;
+    margin: 0;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+/* Ensure twinning panel is visible */
+#twinning-panel {
+    display: none;
+}
+
+#twinning-panel.show {
+    display: block;
+}
+
+/* Enhanced device card styling */
+.device-card {
+    background: #ffffff;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.device-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+.device-card.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.device-id {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.recent {
+    background: #fef3cd;
+    color: #92400e;
+}
+
+.status-badge.inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.device-info {
+    margin-bottom: 12px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.info-row .label {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.info-row .value {
+    color: #1f2937;
+    font-weight: 600;
+}
+
+.payload-preview {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+}
+
+.payload-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.payload-data {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #374151;
+    margin: 0;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+/* Ensure twinning panel is visible */
+#twinning-panel {
+    display: none;
+}
+
+#twinning-panel.show {
+    display: block;
+}

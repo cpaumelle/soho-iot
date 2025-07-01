@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Manager - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Verdegris IoT Platform</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link" href="sites.html">Sites</a>
+                <a class="nav-link" href="locations.html">Locations</a>
+                <a class="nav-link active" href="devices.html">Devices</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Device Manager</h1>
+                        <p class="text-muted">View devices and assign them to locations</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <select id="status-filter" class="form-select" onchange="filterDevices()">
+                            <option value="">All Devices</option>
+                            <option value="CONFIGURED">Configured</option>
+                            <option value="ORPHAN">Orphaned</option>
+                            <option value="DECOMMISSIONED">Decommissioned</option>
+                        </select>
+                        <button class="btn btn-outline-primary" onclick="loadDevices()">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading devices...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Devices</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadDevices()">Retry</button>
+        </div>
+
+        <!-- Device Assignment Modal -->
+        <div id="assignment-form" class="card mb-4 d-none">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Assign Device to Location</h5>
+            </div>
+            <div class="card-body">
+                <form id="device-assignment-form">
+                    <input type="hidden" id="assign-deveui">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Device</label>
+                                <p class="form-control-plaintext" id="assign-device-info">-</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="assign-zone" class="form-label">Zone *</label>
+                                <select class="form-select" id="assign-zone" required>
+                                    <option value="">Select a zone...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="assign-name" class="form-label">Device Name</label>
+                        <input type="text" class="form-control" id="assign-name" placeholder="Optional display name">
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Assign Device</button>
+                        <button type="button" class="btn btn-secondary" onclick="cancelAssignment()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Device Statistics -->
+        <div id="device-stats" class="row mb-4 d-none">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h4 id="total-count">0</h4>
+                        <p class="mb-0">Total Devices</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h4 id="configured-count">0</h4>
+                        <p class="mb-0">Configured</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h4 id="orphan-count">0</h4>
+                        <p class="mb-0">Orphaned</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-secondary text-white">
+                    <div class="card-body text-center">
+                        <h4 id="decommissioned-count">0</h4>
+                        <p class="mb-0">Decommissioned</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Table -->
+        <div id="devices-content" class="d-none">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Devices</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Device EUI</th>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Location</th>
+                                    <th>Last Seen</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="devices-table-body">
+                                <!-- Devices will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-devices" class="text-center py-4 d-none">
+                        <p class="text-muted">No devices found matching the current filter.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let allDevices = [];
+        let filteredDevices = [];
+        let availableZones = [];
+
+        // Load devices on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDevices();
+            loadZones();
+        });
+
+        async function loadDevices() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('devices-content');
+            const stats = document.getElementById('device-stats');
+            
+            // Show loading state
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            content.classList.add('d-none');
+            stats.classList.add('d-none');
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const devices = await api.get('/v1/devices');
+                
+                allDevices = devices;
+                updateStats(devices);
+                filterDevices(); // Apply current filter
+                
+                // Show content, hide loading
+                loading.classList.add('d-none');
+                content.classList.remove('d-none');
+                stats.classList.remove('d-none');
+                
+            } catch (err) {
+                console.error('Error loading devices:', err);
+                
+                // Show error state
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 
+                    'Failed to load devices: ' + err.message;
+            }
+        }
+
+        async function loadZones() {
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const zones = await api.get('/v1/zones');
+                availableZones = zones;
+                populateZoneSelector();
+            } catch (err) {
+                console.error('Error loading zones:', err);
+            }
+        }
+
+        function populateZoneSelector() {
+            const select = document.getElementById('assign-zone');
+            select.innerHTML = '<option value="">Select a zone...</option>';
+            
+            availableZones.forEach(zone => {
+                const option = document.createElement('option');
+                option.value = zone.id;
+                option.textContent = zone.full_path;
+                select.appendChild(option);
+            });
+        }
+
+        function updateStats(devices) {
+            const stats = {
+                total: devices.length,
+                configured: devices.filter(d => d.status === 'CONFIGURED').length,
+                orphan: devices.filter(d => d.status === 'ORPHAN').length,
+                decommissioned: devices.filter(d => d.status === 'DECOMMISSIONED').length
+            };
+            
+            document.getElementById('total-count').textContent = stats.total;
+            document.getElementById('configured-count').textContent = stats.configured;
+            document.getElementById('orphan-count').textContent = stats.orphan;
+            document.getElementById('decommissioned-count').textContent = stats.decommissioned;
+        }
+
+        function filterDevices() {
+            const filter = document.getElementById('status-filter').value;
+            
+            if (filter) {
+                filteredDevices = allDevices.filter(device => device.status === filter);
+            } else {
+                filteredDevices = [...allDevices];
+            }
+            
+            displayDevices(filteredDevices);
+        }
+
+        function displayDevices(devices) {
+            const tbody = document.getElementById('devices-table-body');
+            const noDevices = document.getElementById('no-devices');
+            
+            if (!devices || devices.length === 0) {
+                tbody.innerHTML = '';
+                noDevices.classList.remove('d-none');
+                return;
+            }
+            
+            noDevices.classList.add('d-none');
+            
+            tbody.innerHTML = devices.map(device => {
+                const statusBadge = getStatusBadge(device.status);
+                const location = getLocationDisplay(device);
+                const lastSeen = device.last_uplink ? formatDate(device.last_uplink) : 'Never';
+                
+                return `
+                    <tr>
+                        <td><code>${escapeHtml(device.deveui)}</code></td>
+                        <td>${escapeHtml(device.name || '-')}</td>
+                        <td>${escapeHtml(device.device_type || '-')}</td>
+                        <td>${statusBadge}</td>
+                        <td>${location}</td>
+                        <td>${lastSeen}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="assignDevice('${device.deveui}')" title="Assign to Location">
+                                    <i class="fas fa-map-pin"></i>
+                                </button>
+                                <button class="btn btn-outline-info" onclick="viewDevice('${device.deveui}')" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                ${device.status !== 'DECOMMISSIONED' ? 
+                                    `<button class="btn btn-outline-warning" onclick="decommissionDevice('${device.deveui}')" title="Decommission">
+                                        <i class="fas fa-power-off"></i>
+                                    </button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getStatusBadge(status) {
+            const badges = {
+                'CONFIGURED': '<span class="badge bg-success">Configured</span>',
+                'ORPHAN': '<span class="badge bg-warning">Orphaned</span>',
+                'DECOMMISSIONED': '<span class="badge bg-secondary">Decommissioned</span>'
+            };
+            return badges[status] || '<span class="badge bg-light text-dark">Unknown</span>';
+        }
+
+        function getLocationDisplay(device) {
+            if (device.status === 'CONFIGURED' && device.zone_name) {
+                return `
+                    <small>
+                        ${escapeHtml(device.site_name || '')} > 
+                        ${escapeHtml(device.floor_name || '')} > 
+                        ${escapeHtml(device.room_name || '')} > 
+                        <strong>${escapeHtml(device.zone_name)}</strong>
+                    </small>
+                `;
+            }
+            return '<span class="text-muted">Unassigned</span>';
+        }
+
+        function assignDevice(deveui) {
+            const device = allDevices.find(d => d.deveui === deveui);
+            if (!device) return;
+            
+            document.getElementById('assign-deveui').value = deveui;
+            document.getElementById('assign-device-info').textContent = 
+                deveui + (device.name ? ' (' + device.name + ')' : '');
+            document.getElementById('assign-name').value = device.name || '';
+            document.getElementById('assign-zone').value = device.zone_id || '';
+            
+            document.getElementById('assignment-form').classList.remove('d-none');
+            document.getElementById('assign-zone').focus();
+        }
+
+        function cancelAssignment() {
+            document.getElementById('assignment-form').classList.add('d-none');
+            document.getElementById('device-assignment-form').reset();
+        }
+
+        function viewDevice(deveui) {
+            // For now, just show device details in an alert
+            // In the future, this could open a detailed modal or new page
+            const device = allDevices.find(d => d.deveui === deveui);
+            if (device) {
+                const details = `
+Device EUI: ${device.deveui}
+Name: ${device.name || 'Not set'}
+Type: ${device.device_type || 'Unknown'}
+Status: ${device.status}
+Location: ${getLocationDisplay(device).replace(/<[^>]*>/g, '')}
+Last Seen: ${device.last_uplink ? formatDate(device.last_uplink) : 'Never'}
+                `.trim();
+                alert(details);
+            }
+        }
+
+        async function decommissionDevice(deveui) {
+            const device = allDevices.find(d => d.deveui === deveui);
+            if (!device) return;
+            
+            if (!confirm('Decommission device "' + deveui + '"? This will preserve all historical data but mark the device as inactive.')) {
+                return;
+            }
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                await api.put('/v1/devices/' + deveui, {
+                    ...device,
+                    status: 'DECOMMISSIONED'
+                });
+                
+                // Reload devices to reflect changes
+                await loadDevices();
+                
+            } catch (err) {
+                alert('Failed to decommission device: ' + err.message);
+            }
+        }
+
+        // Handle device assignment form submission
+        document.getElementById('device-assignment-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            
+            try {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Assigning...';
+                
+                const deveui = document.getElementById('assign-deveui').value;
+                const zoneId = document.getElementById('assign-zone').value;
+                const name = document.getElementById('assign-name').value.trim();
+                
+                const api = new APIClient('https://api.sensemy.cloud');
+                
+                // Update device name if provided
+                if (name) {
+                    await api.put('/v1/devices/' + deveui, { name });
+                }
+                
+                // Assign device to location
+                await api.put('/v1/devices/' + deveui + '/location', {
+                    zone_id: parseInt(zoneId)
+                });
+                
+                // Reload devices and hide form
+                await loadDevices();
+                cancelAssignment();
+                
+            } catch (err) {
+                alert('Failed to assign device: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        });
+
+        function formatDate(dateString) {
+            try {
+                return new Date(dateString).toLocaleString();
+            } catch {
+                return 'Invalid date';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

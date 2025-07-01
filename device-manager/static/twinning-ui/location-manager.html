@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Location Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.0/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { 
+      background-color: #f7f8fa; 
+      margin: 0;
+      padding: 1rem;
+    }
+    .card { 
+      border-radius: 12px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+      padding: 1.5rem; 
+      background: white; 
+      margin-bottom: 1.5rem; 
+    }
+    .map-container { 
+      height: 250px; 
+      border-radius: 8px; 
+    }
+    .btn-pill { 
+      border-radius: 50px; 
+    }
+    .entity-row { 
+      display: flex; 
+      align-items: center; 
+      margin-bottom: 0.5rem; 
+      gap: 0.5rem; 
+    }
+    .nested { 
+      margin-left: 2rem; 
+    }
+    .crud-icons button { 
+      border: none; 
+      background: transparent; 
+      color: #666; 
+      font-size: 1rem; 
+    }
+    .crud-icons button:hover { 
+      color: #000; 
+    }
+    .entity-label { 
+      display: flex; 
+      align-items: center; 
+      gap: 0.5rem; 
+      flex-grow: 1; 
+      font-weight: 500; 
+    }
+    .icon-picker span { 
+      cursor: pointer; 
+      font-size: 1.2rem; 
+      margin: 0 4px; 
+    }
+    .icon-picker span.selected { 
+      border-bottom: 2px solid #007bff; 
+    }
+    @media (min-width: 768px) {
+      .grid-cols { 
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        gap: 1.5rem; 
+      }
+    }
+    .icon-picker span {
+      display: inline-block;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .icon-picker span:hover {
+      border-color: #ccc;
+    }
+    .icon-picker span.selected {
+      border: 2px solid #0d6efd;
+      background-color: #e7f1ff;
+    }
+  </style>
+</head>
+<body>
+
+<h2 class="mb-4">Location Manager</h2>
+
+<div class="grid-cols">
+  <!-- Sites Card -->
+  <div class="card" id="sites-card">
+    <h5 class="mb-3 d-flex justify-content-between align-items-center">
+      My Sites
+      <div>
+        <button class="btn btn-sm btn-outline-primary btn-pill me-1" onclick="openSiteModal()">Add Site</button>
+        <button class="btn btn-sm btn-outline-secondary btn-pill" onclick="editSelectedSite()">Edit Site</button>
+      </div>
+    </h5>
+    <select class="form-select mb-3" id="siteSelect" onchange="selectSiteFromDropdown()"></select>
+    <div id="map" class="map-container"></div>
+  </div>
+
+  <!-- Spaces Card -->
+  <div class="card" id="spaces-card">
+    <h5 class="mb-3 d-flex justify-content-between align-items-center">
+      <span id="spacesTitle">
+        My Spaces within <span class="text-primary fw-semibold" id="selectedSiteName">...</span>
+      </span>  <div>
+    <button class="btn btn-sm btn-outline-primary btn-pill me-1" onclick="addFloor()">Add Floor</button>
+  </div>
+</h5>
+    <div id="spacesHierarchy"></div>
+  </div>
+</div>
+
+<!-- Site Modal -->
+<div class="modal fade" id="siteModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add New Site</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label for="siteNameInput" class="form-label">Site Name</label>
+              <input type="text" class="form-control" id="siteNameInput" placeholder="Enter site name">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Site Icon</label>
+              <div class="icon-picker" id="siteIconPicker">
+                <span>🏠</span><span>🏢</span><span>🏣</span><span>🏤</span><span>🏥</span>
+                <span>🏦</span><span>🏨</span><span>🏪</span><span>🏫</span><span>🏬</span>
+                <span>🏭</span><span>🏰</span><span>🏯</span><span>🏛️</span><span>⛪</span>
+                <span>🕌</span><span>🕍</span><span>⛩️</span><span>🕋</span><span>⛺</span>
+                <span>🏕️</span><span>🏖️</span><span>🏗️</span><span>🏘️</span><span>🏙️</span>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="siteAddressInput" class="form-label">Address</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="siteAddressInput" placeholder="Enter site address">
+                <button class="btn btn-outline-secondary" type="button" onclick="searchAddress()">
+                  <i class="bi bi-search"></i> Search
+                </button>
+              </div>
+              <div id="addressSuggestions" class="list-group position-absolute" style="width: calc(100% - 50px); z-index: 1000; display: none;"></div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div id="siteMap" style="height: 300px; border-radius: 8px;" class="mb-3"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveSite()">Save Site</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="spaceModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Edit Space</h5></div>
+      <div class="modal-body">
+        <input type="text" id="spaceNameInput" class="form-control mb-2" placeholder="Name">
+        <div class="icon-picker" id="spaceIconPicker">
+          <span>🏠</span><span>🏢</span><span>🏣</span><span>🏤</span><span>🏥</span>
+          <span>🏦</span><span>🏨</span><span>🏪</span><span>🏫</span><span>🏬</span>
+          <span>🏭</span><span>🏰</span><span>🏯</span><span>🏛️</span><span>⛪</span>
+          <span>🕌</span><span>🕍</span><span>⛩️</span><span>🕋</span><span>⛺</span>
+          <span>🏕️</span><span>🏖️</span><span>🏗️</span><span>🏘️</span><span>🏙️</span>
+          <span>🏚️</span><span>🏛️</span><span>🏜️</span><span>🏝️</span><span>🏞️</span>
+          <span>🏟️</span><span>🏠</span><span>🏡</span><span>🏢</span><span>🏣</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSpace()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Define state
+let sites = [
+  { id: 1, name: "My House", icon: "🏡", lat: 51.398728664279396, lng: -0.865592805733446 },
+  { id: 2, name: "Summer Cabin", icon: "🏕️", lat: 48.63749365484096, lng: -2.0566872813411514 }
+];
+let currentSiteId = 1;
+let spaceState = {
+  1: [ // My House
+    { id: "f1", name: "Ground", icon: "🏠", rooms: [
+      { id: "r1", name: "Lounge", icon: "🛋️", zones: [] },
+      { id: "r2", name: "Kitchen", icon: "🍳", zones: [] }
+    ]}
+  ]
+};
+let editingSpace = null, editingSite = null;
+
+const map = L.map('map').setView([51.3987, -0.8656], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let markers = {};
+
+// Function to fit map to show all markers
+function fitMapToMarkers() {
+  map.invalidateSize();
+  const markerList = Object.values(markers);
+  if (markerList.length === 1) {
+    map.setView(markerList[0].getLatLng(), 6);
+  } else if (markerList.length > 1) {
+    const markerBounds = L.latLngBounds([]);
+    markerList.forEach(marker => {
+      markerBounds.extend(marker.getLatLng());
+    });
+    map.fitBounds(markerBounds, {
+      padding: [50, 50],
+      maxZoom: 10
+    });
+  }
+}
+
+sites.forEach(site => {
+  const marker = L.marker([site.lat, site.lng]).addTo(map)
+    .bindPopup(`${site.icon} ${site.name}`)
+    .on('click', () => {
+      currentSiteId = site.id;
+      renderSiteDropdown();
+      renderSpaces();
+    });
+  markers[site.id] = marker;
+});
+
+// Fit map to show all markers after adding them
+fitMapToMarkers();
+
+function renderSiteDropdown() {
+  const sel = document.getElementById("siteSelect");
+  sel.innerHTML = sites.map(site =>
+    `<option value="${site.id}" ${site.id === currentSiteId ? 'selected' : ''}>
+      ${site.icon} ${site.name}
+    </option>`).join("");
+}
+function selectSiteFromDropdown() {
+  const id = +document.getElementById("siteSelect").value;
+  currentSiteId = id;
+  const marker = markers[id];
+  if (marker) {
+    map.setView(marker.getLatLng(), 10);
+    marker.openPopup();
+  }
+  renderSpaces();
+}
+function renderSpaces() {
+  const container = document.getElementById("spacesHierarchy");
+  const site = sites.find(s => s.id === currentSiteId);
+  document.getElementById("selectedSiteName").textContent = site?.name || 'Selected Site';
+
+
+  const data = spaceState[currentSiteId] || [];
+  container.innerHTML = "";
+
+  if (data.length === 0) {
+    container.innerHTML = `<div class="text-muted">No spaces defined for this site yet. Start by adding a floor.</div>`;
+    return;
+  }
+
+  data.forEach(floor => {
+    const floorEl = document.createElement("div");
+    floorEl.className = "entity-row";
+    floorEl.innerHTML = `
+      <div class="entity-label">${floor.icon || ""} ${floor.name}</div>
+      <div class="crud-icons">
+        <button onclick="editSpace('floor', '${floor.id}')"><i class="bi bi-pencil"></i></button>
+        <button onclick="addRoom('${floor.id}')"><i class="bi bi-plus-square"></i></button>
+      </div>`;
+    container.appendChild(floorEl);
+
+    (floor.rooms || []).forEach(room => {
+      const roomEl = document.createElement("div");
+      roomEl.className = "entity-row nested";
+      roomEl.innerHTML = `
+        <div class="entity-label">${room.icon || ""} ${room.name}</div>
+        <div class="crud-icons">
+          <button onclick="editSpace('room', '${room.id}', '${floor.id}')"><i class="bi bi-pencil"></i></button>
+          <button onclick="addZone('${floor.id}', '${room.id}')"><i class="bi bi-plus-square"></i></button>
+        </div>`;
+      container.appendChild(roomEl);
+
+      (room.zones || []).forEach(zone => {
+        const zoneEl = document.createElement("div");
+        zoneEl.className = "entity-row nested";
+        zoneEl.style.marginLeft = "4rem";
+        const iconDisplay = zone.icon ? `${zone.icon} ` : '';
+        zoneEl.innerHTML = `
+          <div class="entity-label">${iconDisplay}${zone.name}</div>
+          <div class="crud-icons">
+            <button onclick="editSpace('zone', '${zone.id}', '${floor.id}', '${room.id}')"><i class="bi bi-pencil"></i></button>
+          </div>`;
+  container.appendChild(zoneEl);
+});
+
+    });
+  });
+}
+
+// Initialize site map
+let siteMap = null;
+let siteMarker = null;
+
+function initializeSiteMap() {
+  if (!siteMap) {
+    siteMap = L.map('siteMap').setView([51.3987, -0.8656], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(siteMap);
+    
+    // Add click handler to map
+    siteMap.on('click', function(e) {
+      if (siteMarker) {
+        siteMarker.setLatLng(e.latlng);
+      } else {
+        siteMarker = L.marker(e.latlng).addTo(siteMap);
+      }
+    });
+  }
+  return siteMap; // Return the map instance
+}
+
+function openSiteModal() {
+  editingSite = null;
+  document.getElementById("siteNameInput").value = "";
+  document.getElementById("siteAddressInput").value = "";
+  
+  // Reset icon picker
+  const iconPicker = document.getElementById("siteIconPicker");
+  iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+  iconPicker.querySelector("span").classList.add("selected");
+  
+  // Initialize map if not already done
+  siteMap = initializeSiteMap();
+  
+  // Reset map view and marker
+  siteMap.setView([51.3987, -0.8656], 13);
+  if (siteMarker) {
+    siteMap.removeLayer(siteMarker);
+    siteMarker = null;
+  }
+  
+  new bootstrap.Modal('#siteModal').show();
+  setTimeout(() => {
+    if (siteMap) {
+      siteMap.invalidateSize();
+      if (siteMarker) {
+        siteMap.setView(siteMarker.getLatLng(), 16);
+      } else {
+        siteMap.setView([51.3987, -0.8656], 13);
+      }
+    }
+  }, 300);
+}
+
+function editSelectedSite() {
+  const site = sites.find(s => s.id === currentSiteId);
+  if (!site) return;
+  editingSite = site;
+  document.getElementById("siteNameInput").value = site.name;
+  document.querySelectorAll("#siteIconPicker span").forEach(s => {
+    s.classList.toggle("selected", s.textContent === site.icon);
+  });
+  new bootstrap.Modal('#siteModal').show();
+}
+
+function saveSite() {
+  const name = document.getElementById("siteNameInput").value.trim();
+  const address = document.getElementById("siteAddressInput").value.trim();
+  const icon = document.querySelector("#siteIconPicker span.selected")?.textContent || "🏠";
+  
+  // Validate input
+  if (!name) {
+    alert("Please enter a site name");
+    return;
+  }
+  
+  if (!siteMarker) {
+    alert("Please select a location on the map");
+    return;
+  }
+  
+  const latlng = siteMarker.getLatLng();
+  
+  try {
+    if (editingSite) {
+      // Update existing site
+      editingSite.name = name;
+      editingSite.icon = icon;
+      editingSite.lat = latlng.lat;
+      editingSite.lng = latlng.lng;
+      markers[editingSite.id].setLatLng(latlng).setPopupContent(`${icon} ${name}`);
+    } else {
+      // Add new site
+      const id = Date.now();
+      const newSite = { 
+        id, 
+        name, 
+        icon, 
+        lat: latlng.lat, 
+        lng: latlng.lng 
+      };
+      sites.push(newSite);
+      
+      const marker = L.marker(latlng)
+        .addTo(map)
+        .bindPopup(`${icon} ${name}`)
+        .on('click', () => {
+          currentSiteId = id;
+          renderSiteDropdown();
+          renderSpaces();
+        });
+      markers[id] = marker;
+      spaceState[id] = [];
+      currentSiteId = id;
+    }
+    
+    // Close modal and refresh view
+    bootstrap.Modal.getInstance(document.getElementById("siteModal")).hide();
+    renderSiteDropdown();
+    renderSpaces();
+    
+    // Refit map to show all markers
+    fitMapToMarkers();
+    
+  } catch (error) {
+    console.error("Error saving site:", error);
+    alert("Error saving site: " + error.message);
+  }
+}
+
+// Add click handler for site icon picker
+document.addEventListener('DOMContentLoaded', function() {
+  const iconPicker = document.getElementById("siteIconPicker");
+  iconPicker.addEventListener('click', function(e) {
+    if (e.target.tagName === 'SPAN') {
+      this.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+      e.target.classList.add("selected");
+    }
+  });
+});
+
+function addFloor() {
+  editingSpace = { level: 'floor' };
+  document.getElementById("spaceNameInput").value = "";
+  const iconPicker = document.getElementById("spaceIconPicker");
+  // Remove any existing selections
+  iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+  // Select the first icon by default
+  iconPicker.querySelector("span").classList.add("selected");
+  new bootstrap.Modal('#spaceModal').show();
+}
+function addRoom(floorId) {
+  editingSpace = { level: 'room', floorId };
+  document.getElementById("spaceNameInput").value = "";
+  const iconPicker = document.getElementById("spaceIconPicker");
+  // Remove any existing selections
+  iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+  // Select the first icon by default
+  iconPicker.querySelector("span").classList.add("selected");
+  new bootstrap.Modal('#spaceModal').show();
+}
+function addZone(floorId, roomId) {
+  editingSpace = { level: 'zone', floorId, roomId };
+  document.getElementById("spaceNameInput").value = "";
+  const iconPicker = document.getElementById("spaceIconPicker");
+  // Remove any existing selections
+  iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+  // Select the first icon by default
+  iconPicker.querySelector("span").classList.add("selected");
+  new bootstrap.Modal('#spaceModal').show();
+}
+function editSpace(level, id, floorId, roomId) {
+  editingSpace = { level, id, floorId, roomId };
+  const floor = spaceState[currentSiteId].find(f => f.id === floorId || f.id === id);
+  const room = level === 'room' ? floor.rooms.find(r => r.id === id) :
+               level === 'zone' ? floor.rooms.find(r => r.id === roomId) : null;
+  const zone = level === 'zone' ? room.zones.find(z => z.id === id) : null;
+  const item = { floor, room, zone }[level];
+  document.getElementById("spaceNameInput").value = item.name;
+  document.querySelectorAll("#spaceIconPicker span").forEach(s => {
+    s.classList.toggle("selected", s.textContent === item.icon);
+  });
+  new bootstrap.Modal('#spaceModal').show();
+}
+function saveSpace() {
+  const name = document.getElementById("spaceNameInput").value.trim();
+  const icon = document.querySelector("#spaceIconPicker span.selected")?.textContent || "🏠";
+  
+  // Validate input
+  if (!name) {
+    alert("Please enter a name for the space");
+    return;
+  }
+
+  const { level, id, floorId, roomId } = editingSpace;
+  
+  try {
+    if (level === 'floor') {
+      if (!id) {
+        // Adding new floor
+        if (!spaceState[currentSiteId]) {
+          spaceState[currentSiteId] = [];
+        }
+        spaceState[currentSiteId].push({ 
+          id: `f${Date.now()}`, 
+          name, 
+          icon, 
+          rooms: [] 
+        });
+      } else {
+        // Editing existing floor
+        const floor = spaceState[currentSiteId].find(f => f.id === id);
+        if (floor) {
+          floor.name = name;
+          floor.icon = icon;
+        }
+      }
+    } else if (level === 'room') {
+      const floor = spaceState[currentSiteId].find(f => f.id === floorId);
+      if (!floor) {
+        throw new Error("Parent floor not found");
+      }
+      
+      if (!id) {
+        // Adding new room
+        floor.rooms.push({ 
+          id: `r${Date.now()}`, 
+          name, 
+          icon, 
+          zones: [] 
+        });
+      } else {
+        // Editing existing room
+        const room = floor.rooms.find(r => r.id === id);
+        if (room) {
+          room.name = name;
+          room.icon = icon;
+        }
+      }
+    } else if (level === 'zone') {
+      const floor = spaceState[currentSiteId].find(f => f.id === floorId);
+      if (!floor) {
+        throw new Error("Parent floor not found");
+      }
+      
+      const room = floor.rooms.find(r => r.id === roomId);
+      if (!room) {
+        throw new Error("Parent room not found");
+      }
+      
+      if (!id) {
+        // Adding new zone
+        room.zones.push({ 
+          id: `z${Date.now()}`, 
+          name, 
+          icon 
+        });
+      } else {
+        // Editing existing zone
+        const zone = room.zones.find(z => z.id === id);
+        if (zone) {
+          zone.name = name;
+          zone.icon = icon;
+        }
+      }
+    }
+    
+    // Close modal and refresh view
+    bootstrap.Modal.getInstance(document.getElementById("spaceModal")).hide();
+    renderSpaces();
+    
+  } catch (error) {
+    console.error("Error saving space:", error);
+    alert("Error saving space: " + error.message);
+  }
+}
+
+// Add click handler for icon picker
+document.addEventListener('DOMContentLoaded', function() {
+  const iconPicker = document.getElementById("spaceIconPicker");
+  iconPicker.addEventListener('click', function(e) {
+    if (e.target.tagName === 'SPAN') {
+      // Remove selection from all icons
+      this.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+      // Add selection to clicked icon
+      e.target.classList.add("selected");
+    }
+  });
+});
+
+// Address search functionality
+let addressSearchTimeout = null;
+const addressInput = document.getElementById('siteAddressInput');
+const suggestionsDiv = document.getElementById('addressSuggestions');
+
+addressInput.addEventListener('input', function() {
+  clearTimeout(addressSearchTimeout);
+  const query = this.value.trim();
+  
+  if (query.length < 3) {
+    suggestionsDiv.style.display = 'none';
+    return;
+  }
+  
+  addressSearchTimeout = setTimeout(() => {
+    searchAddress(query, true);
+  }, 300);
+});
+
+async function searchAddress(query = null, showSuggestions = false) {
+  const searchQuery = query || document.getElementById('siteAddressInput').value.trim();
+  
+  if (!searchQuery) {
+    alert('Please enter an address to search');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`);
+    const data = await response.json();
+    
+    if (showSuggestions) {
+      // Show suggestions dropdown
+      suggestionsDiv.innerHTML = '';
+      if (data.length > 0) {
+        data.forEach(result => {
+          const item = document.createElement('button');
+          item.className = 'list-group-item list-group-item-action';
+          item.textContent = result.display_name;
+          item.onclick = () => {
+            selectAddress(result);
+            // Force a small delay to ensure the map is ready
+            setTimeout(() => {
+              const latlng = [parseFloat(result.lat), parseFloat(result.lon)];
+              siteMap.setView(latlng, 16);
+              if (siteMarker) {
+                siteMarker.setLatLng(latlng);
+              } else {
+                siteMarker = L.marker(latlng).addTo(siteMap);
+              }
+            }, 100);
+          };
+          suggestionsDiv.appendChild(item);
+        });
+        suggestionsDiv.style.display = 'block';
+      } else {
+        suggestionsDiv.style.display = 'none';
+      }
+    } else if (data.length > 0) {
+      // Use first result for direct search
+      selectAddress(data[0]);
+      // Force a small delay to ensure the map is ready
+      setTimeout(() => {
+        const latlng = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        siteMap.setView(latlng, 16);
+        if (siteMarker) {
+          siteMarker.setLatLng(latlng);
+        } else {
+          siteMarker = L.marker(latlng).addTo(siteMap);
+        }
+      }, 100);
+    } else {
+      alert('No results found for this address');
+    }
+  } catch (error) {
+    console.error('Error searching address:', error);
+    alert('Error searching address. Please try again.');
+  }
+}
+
+function selectAddress(result) {
+  // Update address input
+  document.getElementById('siteAddressInput').value = result.display_name;
+  
+  // Ensure map is initialized
+  if (!siteMap) {
+    siteMap = initializeSiteMap();
+  }
+  
+  // Update map
+  const latlng = [parseFloat(result.lat), parseFloat(result.lon)];
+  siteMap.setView(latlng, 16);
+  
+  if (siteMarker) {
+    siteMarker.setLatLng(latlng);
+  } else {
+    siteMarker = L.marker(latlng).addTo(siteMap);
+  }
+  
+  // Hide suggestions
+  suggestionsDiv.style.display = 'none';
+}
+
+// Close suggestions when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#siteAddressInput') && !e.target.closest('#addressSuggestions')) {
+    suggestionsDiv.style.display = 'none';
+  }
+});
+
+// Add some CSS for the suggestions
+const style = document.createElement('style');
+style.textContent = `
+  #addressSuggestions {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  #addressSuggestions .list-group-item {
+    cursor: pointer;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+  }
+  #addressSuggestions .list-group-item:hover {
+    background-color: #f8f9fa;
+  }
+`;
+document.head.appendChild(style);
+
+renderSiteDropdown();
+renderSpaces();
+</script>
+
+
+</body>
+</html>

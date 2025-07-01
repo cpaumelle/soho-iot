@@ -1,0 +1,51 @@
+# SenseMy IoT Platform: Caddy Reverse Proxy Configuration
+# Version: 1.2.2
+# Fixed bad `uri` directive inside handle block
+# Source: unified-database-config.yml
+
+# API Backend
+api.sensemy.cloud {
+	reverse_proxy device-manager:{$DEVICE_MANAGER_SERVICE_PORT}
+	tls chpa35@gmail.com
+}
+
+# Devices API endpoint
+devices.sensemy.cloud {
+	reverse_proxy device-server:{$DEVICE_MANAGER_SERVICE_PORT}
+	tls chpa35@gmail.com
+}
+
+# Ingest API endpoint
+ingest.sensemy.cloud {
+	reverse_proxy ingest-service:{$INGEST_SERVICE_PORT}
+	tls chpa35@gmail.com
+}
+
+# Analytics API endpoint
+analytics.sensemy.cloud {
+	reverse_proxy analytics-processor:{$ANALYTICS_SERVICE_PORT}
+	tls chpa35@gmail.com
+}
+
+# Database admin UI
+adminer.sensemy.cloud {
+	reverse_proxy adminer-ui:{$ADMINER_PORT}
+	tls chpa35@gmail.com
+}
+
+# Device Manager UI development (multiple versions iteration)
+app.sensemy.cloud {
+	# Redirect root to v1
+	redir / /v1/dashboard.html
+
+	# Define matcher for versioned static paths (e.g., /v6/dashboard.html)
+	@version_static path_regexp version_static ^/v([1-9][0-9]*)/(.*)$
+
+	handle @version_static {
+		root * /var/www/ui-versions/v{http.regexp.version_static.1}/src
+		rewrite * /{http.regexp.version_static.2}
+		file_server
+	}
+
+	tls chpa35@gmail.com
+}

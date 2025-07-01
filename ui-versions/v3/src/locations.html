@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locations Manager V3 - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .site-card {
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .site-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            border-color: #0d6efd;
+        }
+        .breadcrumb-nav {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Verdegris IoT Platform</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link" href="sites.html">Sites</a>
+                <a class="nav-link active" href="locations.html">Locations</a>
+                <a class="nav-link" href="devices.html">Devices</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Locations Manager <span class="badge bg-secondary">V3</span></h1>
+                        <p class="text-muted">Manage floors, rooms, and zones within your sites</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a href="sites.html" class="btn btn-outline-secondary">← Back to Sites</a>
+                        <a href="devices.html" class="btn btn-info">Assign Devices →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Breadcrumb (hidden initially) -->
+        <div id="breadcrumb-nav" class="breadcrumb-nav d-none">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="#" onclick="showSiteSelection()">All Sites</a></li>
+                    <li class="breadcrumb-item active" id="current-site-name">Current Site</li>
+                </ol>
+            </nav>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading sites...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Data</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadSiteSelector()">Retry</button>
+        </div>
+
+        <!-- Site Selection Grid -->
+        <div id="site-selection" class="d-none">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h3>🏢 Choose a Site to Manage</h3>
+                    <p class="text-muted">Click on any site below to view and manage its location hierarchy</p>
+                </div>
+            </div>
+            <div class="row" id="sites-grid">
+                <!-- Site cards will be populated here -->
+            </div>
+        </div>
+
+        <!-- Original dropdown fallback (hidden by default) -->
+        <div id="no-site-selected" class="d-none">
+            <div class="alert alert-info">
+                <h4 class="alert-heading">Select a Site</h4>
+                <p>Choose a site from above to view and manage its location hierarchy.</p>
+                <hr>
+                <p class="mb-0">
+                    <a href="sites.html" class="btn btn-outline-primary">
+                        ← Back to Sites Manager
+                    </a>
+                </p>
+            </div>
+        </div>
+
+        <!-- Location Management (same as V1 for now) -->
+        <div id="hierarchy-content" class="d-none">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        Location Hierarchy: <span id="current-site-title">-</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="hierarchy-tree">
+                        <!-- Hierarchy will be displayed here -->
+                    </div>
+                    <div id="no-locations" class="text-center py-4 d-none">
+                        <p class="text-muted">No locations found for this site.</p>
+                        <button class="btn btn-primary" onclick="showAddLocationForm('floor', null, 'First Floor')">
+                            🏢 Add First Floor
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let currentHierarchy = null;
+        let currentSiteId = null;
+        let allSites = [];
+
+        // Load sites for selector on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSiteSelector();
+            
+            // Check if site_id was passed as URL parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const siteId = urlParams.get('site_id');
+            if (siteId) {
+                loadSiteHierarchy(siteId);
+            }
+        });
+
+        async function loadSiteSelector() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const siteSelection = document.getElementById('site-selection');
+            
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            siteSelection.classList.add('d-none');
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const sites = await api.get('/v1/sites');
+                
+                allSites = sites.filter(site => !site.archived_at); // Only active sites
+                displaySiteGrid();
+                
+                loading.classList.add('d-none');
+                siteSelection.classList.remove('d-none');
+                
+            } catch (err) {
+                console.error('Error loading sites:', err);
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 
+                    'Failed to load sites: ' + err.message;
+            }
+        }
+
+        function displaySiteGrid() {
+            const grid = document.getElementById('sites-grid');
+            
+            grid.innerHTML = allSites.map(site => `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card site-card h-100" onclick="selectSite(${site.id})">
+                        <div class="card-body">
+                            <h5 class="card-title">🏢 ${escapeHtml(site.name)}</h5>
+                            <p class="card-text text-muted">
+                                ${escapeHtml(site.address || 'No address specified')}
+                            </p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">Click to manage locations</small>
+                                <span class="badge bg-primary">→</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectSite(siteId) {
+            loadSiteHierarchy(siteId);
+        }
+
+        function showSiteSelection() {
+            document.getElementById('site-selection').classList.remove('d-none');
+            document.getElementById('hierarchy-content').classList.add('d-none');
+            document.getElementById('breadcrumb-nav').classList.add('d-none');
+            currentSiteId = null;
+        }
+
+        async function loadSiteHierarchy(siteId) {
+            if (!siteId) {
+                showSiteSelection();
+                return;
+            }
+            
+            currentSiteId = siteId;
+            const selectedSite = allSites.find(s => s.id == siteId);
+            
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('hierarchy-content');
+            const siteSelection = document.getElementById('site-selection');
+            const breadcrumb = document.getElementById('breadcrumb-nav');
+            
+            // Show loading state
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            content.classList.add('d-none');
+            siteSelection.classList.add('d-none');
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const hierarchy = await api.get('/v1/locations/hierarchy');
+                
+                // Find the site in the hierarchy
+                const siteData = hierarchy.find(site => site.id == siteId);
+                
+                if (siteData) {
+                    currentHierarchy = siteData;
+                    document.getElementById('current-site-title').textContent = siteData.name;
+                    document.getElementById('current-site-name').textContent = siteData.name;
+                    displayHierarchy(siteData);
+                } else {
+                    // Site exists but has no hierarchy yet
+                    const siteName = selectedSite ? selectedSite.name : 'Unknown Site';
+                    currentHierarchy = { id: siteId, name: siteName, floors: [] };
+                    document.getElementById('current-site-title').textContent = siteName;
+                    document.getElementById('current-site-name').textContent = siteName;
+                    displayHierarchy(currentHierarchy);
+                }
+                
+                // Show content, hide loading
+                loading.classList.add('d-none');
+                content.classList.remove('d-none');
+                breadcrumb.classList.remove('d-none');
+                
+            } catch (err) {
+                console.error('Error loading hierarchy:', err);
+                
+                // Show error state
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 
+                    'Failed to load location hierarchy: ' + err.message;
+            }
+        }
+
+        // Keep the existing hierarchy display and form functions from V1
+        function displayHierarchy(siteData) {
+            const container = document.getElementById('hierarchy-tree');
+            const noLocations = document.getElementById('no-locations');
+            
+            if (!siteData.floors || siteData.floors.length === 0) {
+                container.innerHTML = '';
+                noLocations.classList.remove('d-none');
+                return;
+            }
+            
+            noLocations.classList.add('d-none');
+            
+            let html = `
+                <div class="mb-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="mb-0">
+                            🏢 ${escapeHtml(siteData.name)}
+                        </h6>
+                        <button class="btn btn-sm btn-outline-primary" onclick="showAddLocationForm('floor', ${siteData.id}, 'Floor')">
+                            🏢 Add Floor
+                        </button>
+                    </div>
+            `;
+            
+            siteData.floors.forEach(floor => {
+                html += `
+                    <div class="ms-4 mb-3 border-start ps-3">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h6 class="mb-0">
+                                🏢 ${escapeHtml(floor.name)}
+                            </h6>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info" onclick="showAddLocationForm('room', ${floor.id}, 'Room')">
+                                    🚪 Add Room
+                                </button>
+                                <button class="btn btn-outline-warning" onclick="archiveLocation('floor', ${floor.id})">
+                                    📦
+                                </button>
+                            </div>
+                        </div>
+                `;
+                
+                if (floor.rooms && floor.rooms.length > 0) {
+                    floor.rooms.forEach(room => {
+                        html += `
+                            <div class="ms-4 mb-2 border-start ps-3">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span>
+                                        🚪 ${escapeHtml(room.name)}
+                                    </span>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" onclick="showAddLocationForm('zone', ${room.id}, 'Zone')">
+                                            📍 Add Zone
+                                        </button>
+                                        <button class="btn btn-outline-warning" onclick="archiveLocation('room', ${room.id})">
+                                            📦
+                                        </button>
+                                    </div>
+                                </div>
+                        `;
+                        
+                        if (room.zones && room.zones.length > 0) {
+                            room.zones.forEach(zone => {
+                                html += `
+                                    <div class="ms-4 mb-1">
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <small>
+                                                📍 ${escapeHtml(zone.name)}
+                                            </small>
+                                            <button class="btn btn-sm btn-outline-warning" onclick="archiveLocation('zone', ${zone.id})">
+                                                📦
+                                            </button>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+                        
+                        html += `</div>`;
+                    });
+                }
+                
+                html += `</div>`;
+            });
+            
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        // Placeholder functions - will enhance later
+        function showAddLocationForm(type, parentId, typeName) {
+            alert(`Add ${typeName} functionality will be enhanced in next iteration`);
+        }
+
+        function archiveLocation(type, id) {
+            alert(`Archive ${type} functionality will be enhanced in next iteration`);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

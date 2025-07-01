@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Type Manager V6 - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .stats-card {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .stats-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            border-color: #007bff;
+        }
+        .stats-card.active {
+            border-color: #007bff;
+            box-shadow: 0 8px 20px rgba(0,123,255,0.3);
+        }
+        .device-type-card {
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .device-type-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            border-color: #0d6efd;
+        }
+        .device-type-card.selected {
+            border-color: #0d6efd;
+            background-color: #e3f2fd;
+        }
+        .device-family-badge {
+            font-size: 0.75em;
+            padding: 0.25em 0.5em;
+        }
+        .filter-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .bulk-actions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+        .device-row.has-type {
+            background-color: #f8f9fa;
+        }
+        .device-row.needs-type {
+            background-color: #fff3cd;
+        }
+        .pagination-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .table-controls {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .quick-filter-chips {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        .filter-chip {
+            padding: 6px 12px;
+            background: #e9ecef;
+            border: 1px solid #dee2e6;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-chip:hover {
+            background: #dee2e6;
+        }
+        .filter-chip.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .clear-filters-btn {
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="dashboard.html">Verdegris IoT Platform V4</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link active" href="device-types.html">Device Types</a>
+                <a class="nav-link" href="sites.html">Sites</a>
+                <a class="nav-link" href="locations.html">Locations</a>
+                <a class="nav-link" href="devices.html">Device Locations</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Device Type Manager <span class="badge bg-primary">V4</span></h1>
+                        <p class="text-muted">Assign device types to configure your IoT devices</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-info" onclick="showTypeLibrary()">
+                            📚 Type Library
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="loadData()">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading devices and types...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Data</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadData()">Retry</button>
+        </div>
+
+        <!-- Main Content -->
+        <div id="content" class="d-none">
+            <!-- Clickable Statistics -->
+            <div id="stats" class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card stats-card" onclick="filterByStats('all')" id="stats-total">
+                        <div class="card-body bg-primary text-white text-center">
+                            <h4 id="total-devices">0</h4>
+                            <p class="mb-0">Total Devices</p>
+                            <small class="opacity-75">Click to show all</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card" onclick="filterByStats('typed')" id="stats-typed">
+                        <div class="card-body bg-success text-white text-center">
+                            <h4 id="typed-devices">0</h4>
+                            <p class="mb-0">Type Assigned</p>
+                            <small class="opacity-75">Click to filter</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card" onclick="filterByStats('untyped')" id="stats-untyped">
+                        <div class="card-body bg-warning text-white text-center">
+                            <h4 id="untyped-devices">0</h4>
+                            <p class="mb-0">Need Type</p>
+                            <small class="opacity-75">Click to filter</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card" onclick="filterByStats('available')" id="stats-available">
+                        <div class="card-body bg-info text-white text-center">
+                            <h4 id="available-types">0</h4>
+                            <p class="mb-0">Available Types</p>
+                            <small class="opacity-75">Click to view library</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Filter Chips -->
+            <div class="quick-filter-chips" id="filter-chips">
+                <!-- Populated dynamically -->
+            </div>
+
+            <!-- Enhanced Filter Section -->
+            <div class="filter-section">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Search Devices</label>
+                        <div class="input-group">
+                            <span class="input-group-text">🔍</span>
+                            <input type="text" class="form-control" id="searchInput" placeholder="DevEUI, name, or location..." onkeyup="filterDevices()">
+                            <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Clear search">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select id="type-status-filter" class="form-select" onchange="filterDevices()">
+                            <option value="">All Devices</option>
+                            <option value="needs-type">🔴 Needs Type</option>
+                            <option value="has-type">✅ Has Type</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Device Family</label>
+                        <select id="device-family-filter" class="form-select" onchange="filterDevices()">
+                            <option value="">All Families</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Per Page</label>
+                        <select id="page-size" class="form-select" onchange="changePageSize()">
+                            <option value="25">25 per page</option>
+                            <option value="50" selected>50 per page</option>
+                            <option value="100">100 per page</option>
+                            <option value="250">250 per page</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-outline-secondary w-100" onclick="clearAllFilters()">
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Actions Bar (hidden by default) -->
+            <div id="bulk-assignment" class="bulk-actions d-none">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong><span id="selected-count">0</span> devices selected</strong>
+                        <span class="text-muted ms-2">(<span id="selection-info">from current page</span>)</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <select id="bulk-type-selector" class="form-select" style="width: 250px;">
+                            <option value="">Choose device type...</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="bulkAssignType()">
+                            🔧 Assign Type
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="clearSelection()">
+                            Clear Selection
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table Controls -->
+            <div class="table-controls">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="pagination-info">
+                        <span class="text-muted" id="device-count">0 devices</span>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-secondary" onclick="selectAllVisible()">
+                                Select Page
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="selectAllFiltered()">
+                                Select All Filtered
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="clearSelection()">
+                                Clear Selection
+                            </button>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="text-muted">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="changePage(-1)" id="prev-btn">
+                                ‹ Previous
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="changePage(1)" id="next-btn">
+                                Next ›
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Devices Table -->
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="40px" class="text-center">
+                                        <input class="form-check-input" type="checkbox" id="select-all-page" onchange="toggleSelectAllPage()">
+                                    </th>
+                                    <th onclick="sortDevices('deveui')" class="sortable">
+                                        Device EUI <span class="sort-arrow"></span>
+                                    </th>
+                                    <th onclick="sortDevices('name')" class="sortable">
+                                        Name <span class="sort-arrow"></span>
+                                    </th>
+                                    <th onclick="sortDevices('device_type')" class="sortable">
+                                        Current Type <span class="sort-arrow"></span>
+                                    </th>
+                                    <th>Device Family</th>
+                                    <th onclick="sortDevices('status')" class="sortable">
+                                        Status <span class="sort-arrow"></span>
+                                    </th>
+                                    <th width="120px">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="devices-table">
+                                <!-- Devices populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-devices" class="text-center py-5 d-none">
+                        <p class="text-muted">No devices found matching current filters.</p>
+                        <button class="btn btn-outline-primary" onclick="clearAllFilters()">Clear All Filters</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div class="text-muted">
+                    Showing <span id="showing-start">0</span>-<span id="showing-end">0</span> 
+                    of <span id="showing-total">0</span> devices
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-outline-primary" onclick="changePage(-1)" id="prev-btn-bottom">
+                        ‹ Previous
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="changePage(1)" id="next-btn-bottom">
+                        Next ›
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Device Type Library Modal -->
+        <div class="modal fade" id="typeLibraryModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">📚 Device Type Library</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row" id="type-library">
+                            <!-- Device types populated here -->
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Single Device Type Assignment Modal -->
+        <div class="modal fade" id="deviceTypeModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">🔧 Assign Device Type</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Device</label>
+                            <p id="selected-device-info" class="form-control-plaintext">-</p>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Select Device Type</label>
+                            <div class="row" id="device-type-selector">
+                                <!-- Device type cards populated here -->
+                            </div>
+                        </div>
+                        <input type="hidden" id="selected-device-eui">
+                        <input type="hidden" id="selected-type-id">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" onclick="assignDeviceType()" id="assign-type-btn">
+                            🔧 Assign Type
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let allDevices = [];
+        let allDeviceTypes = [];
+        let filteredDevices = [];
+        let selectedDevices = new Set();
+        let currentPage = 1;
+        let pageSize = 50;
+        let totalPages = 1;
+        let currentSort = { field: 'deveui', direction: 'asc' };
+        let activeStatFilter = null;
+
+        document.addEventListener('DOMContentLoaded', loadData);
+
+        async function loadData() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('content');
+            
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            content.classList.add('d-none');
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                
+                const [devices, deviceTypes] = await Promise.all([
+                    api.get('/v1/devices'),
+                    api.get('/v1/device-types')
+                ]);
+                
+                allDevices = devices;
+                allDeviceTypes = deviceTypes;
+                
+                populateDeviceFamilyFilter();
+                populateBulkTypeSelector();
+                createFilterChips();
+                updateStats();
+                filterDevices();
+                
+                loading.classList.add('d-none');
+                content.classList.remove('d-none');
+                
+            } catch (err) {
+                console.error('Error loading data:', err);
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 
+                    'Failed to load data: ' + err.message;
+            }
+        }
+
+        function populateDeviceFamilyFilter() {
+            const familyFilter = document.getElementById('device-family-filter');
+            const families = [...new Set(allDeviceTypes.map(dt => dt.device_family).filter(Boolean))].sort();
+            
+            familyFilter.innerHTML = '<option value="">All Families</option>';
+            families.forEach(family => {
+                const option = document.createElement('option');
+                option.value = family;
+                option.textContent = family;
+                familyFilter.appendChild(option);
+            });
+        }
+
+        function populateBulkTypeSelector() {
+            const selector = document.getElementById('bulk-type-selector');
+            selector.innerHTML = '<option value="">Choose device type...</option>';
+            
+            allDeviceTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type.id;
+                option.textContent = `${type.name} (${type.device_family})`;
+                selector.appendChild(option);
+            });
+        }
+
+        function createFilterChips() {
+            const container = document.getElementById('filter-chips');
+            const families = [...new Set(allDeviceTypes.map(dt => dt.device_family).filter(Boolean))];
+            
+            let chips = `
+                <div class="filter-chip" onclick="quickFilter('needs-type')">🔴 Needs Type</div>
+                <div class="filter-chip" onclick="quickFilter('has-type')">✅ Has Type</div>
+            `;
+            
+            families.forEach(family => {
+                chips += `<div class="filter-chip" onclick="quickFilter('family', '${family}')">${family}</div>`;
+            });
+            
+            chips += `<div class="filter-chip clear-filters-btn" onclick="clearAllFilters()">Clear All</div>`;
+            container.innerHTML = chips;
+        }
+
+        function updateStats() {
+            const typedDevices = allDevices.filter(d => d.device_type && d.device_type !== null).length;
+            const untypedDevices = allDevices.length - typedDevices;
+            
+            document.getElementById('total-devices').textContent = allDevices.length;
+            document.getElementById('typed-devices').textContent = typedDevices;
+            document.getElementById('untyped-devices').textContent = untypedDevices;
+            document.getElementById('available-types').textContent = allDeviceTypes.length;
+        }
+
+        // Enhanced filtering with pagination
+        function filterDevices() {
+            const searchTerm = document.getElementById('searchInput')?.value?.toLowerCase()?.trim() || '';
+            const typeStatusFilter = document.getElementById('type-status-filter')?.value || '';
+            const familyFilter = document.getElementById('device-family-filter')?.value || '';
+            
+            filteredDevices = allDevices.filter(device => {
+                // Search filter
+                if (searchTerm) {
+                    const searchText = [device.deveui, device.name].filter(Boolean).join(' ').toLowerCase();
+                    if (!searchText.includes(searchTerm)) return false;
+                }
+                
+                // Type status filter
+                if (typeStatusFilter === 'needs-type' && device.device_type) return false;
+                if (typeStatusFilter === 'has-type' && !device.device_type) return false;
+                
+                // Family filter
+                if (familyFilter && device.device_type) {
+                    const deviceType = allDeviceTypes.find(dt => dt.name === device.device_type);
+                    if (!deviceType || deviceType.device_family !== familyFilter) return false;
+                }
+                
+                return true;
+            });
+            
+            applySorting();
+            updatePagination();
+            displayCurrentPage();
+            clearSelection();
+        }
+
+        function applySorting() {
+            filteredDevices.sort((a, b) => {
+                let aVal, bVal;
+                
+                switch (currentSort.field) {
+                    case 'device_type':
+                        aVal = a.device_type || '';
+                        bVal = b.device_type || '';
+                        break;
+                    case 'status':
+                        aVal = a.device_type ? 'typed' : 'untyped';
+                        bVal = b.device_type ? 'typed' : 'untyped';
+                        break;
+                    default:
+                        aVal = (a[currentSort.field] || '').toString().toLowerCase();
+                        bVal = (b[currentSort.field] || '').toString().toLowerCase();
+                }
+                
+                if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function updatePagination() {
+            totalPages = Math.ceil(filteredDevices.length / pageSize);
+            currentPage = Math.min(currentPage, Math.max(1, totalPages));
+            
+            document.getElementById('current-page').textContent = currentPage;
+            document.getElementById('total-pages').textContent = totalPages;
+            
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            const prevBtnBottom = document.getElementById('prev-btn-bottom');
+            const nextBtnBottom = document.getElementById('next-btn-bottom');
+            
+            [prevBtn, prevBtnBottom].forEach(btn => btn.disabled = currentPage <= 1);
+            [nextBtn, nextBtnBottom].forEach(btn => btn.disabled = currentPage >= totalPages);
+            
+            const start = Math.min((currentPage - 1) * pageSize + 1, filteredDevices.length);
+            const end = Math.min(currentPage * pageSize, filteredDevices.length);
+            
+            document.getElementById('showing-start').textContent = start;
+            document.getElementById('showing-end').textContent = end;
+            document.getElementById('showing-total').textContent = filteredDevices.length;
+        }
+
+        function displayCurrentPage() {
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageDevices = filteredDevices.slice(start, end);
+            
+            const tbody = document.getElementById('devices-table');
+            const noDevices = document.getElementById('no-devices');
+            
+            if (pageDevices.length === 0) {
+                tbody.innerHTML = '';
+                noDevices.classList.remove('d-none');
+                return;
+            }
+            
+            noDevices.classList.add('d-none');
+            
+            tbody.innerHTML = pageDevices.map(device => {
+                const isSelected = selectedDevices.has(device.deveui);
+                const hasType = device.device_type !== null && device.device_type !== undefined;
+                const rowClass = hasType ? 'device-row has-type' : 'device-row needs-type';
+                
+                const deviceType = hasType ? 
+                    allDeviceTypes.find(dt => dt.name === device.device_type) : null;
+                
+                return `
+                    <tr class="${rowClass} ${isSelected ? 'table-primary' : ''}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input device-checkbox" 
+                                   value="${device.deveui}" ${isSelected ? 'checked' : ''} 
+                                   onchange="toggleDeviceSelection('${device.deveui}')">
+                        </td>
+                        <td><code>${escapeHtml(device.deveui)}</code></td>
+                        <td>${escapeHtml(device.name || '-')}</td>
+                        <td>
+                            ${hasType ? 
+                                `<strong>${escapeHtml(device.device_type)}</strong>` : 
+                                '<span class="text-muted">Not assigned</span>'
+                            }
+                        </td>
+                        <td>
+                            ${hasType && deviceType ? 
+                                `<span class="badge device-family-badge bg-info">${escapeHtml(deviceType.device_family)}</span>` : 
+                                '-'
+                            }
+                        </td>
+                        <td>
+                            ${hasType ? 
+                                '<span class="badge bg-success">✅ Typed</span>' : 
+                                '<span class="badge bg-warning">🔴 Needs Type</span>'
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-outline-primary btn-sm" 
+                                    onclick="showDeviceTypeAssignment('${device.deveui}')" 
+                                    title="Assign Type">
+                                🔧 ${hasType ? 'Change' : 'Assign'}
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            updateDeviceCount();
+            updateSelectAllCheckbox();
+        }
+
+        function updateDeviceCount() {
+            const count = filteredDevices.length;
+            const total = allDevices.length;
+            document.getElementById('device-count').textContent = 
+                count === total ? `${count} devices` : `${count} of ${total} devices`;
+        }
+
+        // Stats card filtering
+        function filterByStats(type) {
+            clearActiveStatsCards();
+            
+            switch(type) {
+                case 'all':
+                    document.getElementById('stats-total').classList.add('active');
+                    clearAllFilters();
+                    break;
+                case 'typed':
+                    document.getElementById('stats-typed').classList.add('active');
+                    document.getElementById('type-status-filter').value = 'has-type';
+                    filterDevices();
+                    break;
+                case 'untyped':
+                    document.getElementById('stats-untyped').classList.add('active');
+                    document.getElementById('type-status-filter').value = 'needs-type';
+                    filterDevices();
+                    break;
+                case 'available':
+                    document.getElementById('stats-available').classList.add('active');
+                    showTypeLibrary();
+                    break;
+            }
+            activeStatFilter = type;
+        }
+
+        function clearActiveStatsCards() {
+            document.querySelectorAll('.stats-card').forEach(card => {
+                card.classList.remove('active');
+            });
+        }
+
+        function quickFilter(type, value = null) {
+            clearActiveFilterChips();
+            event.target.classList.add('active');
+            
+            if (type === 'needs-type') {
+                document.getElementById('type-status-filter').value = 'needs-type';
+            } else if (type === 'has-type') {
+                document.getElementById('type-status-filter').value = 'has-type';
+            } else if (type === 'family') {
+                document.getElementById('device-family-filter').value = value;
+            }
+            
+            filterDevices();
+        }
+
+        function clearActiveFilterChips() {
+            document.querySelectorAll('.filter-chip').forEach(chip => {
+                chip.classList.remove('active');
+            });
+        }
+
+        function clearAllFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('type-status-filter').value = '';
+            document.getElementById('device-family-filter').value = '';
+            clearActiveStatsCards();
+            clearActiveFilterChips();
+            currentPage = 1;
+            filterDevices();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            filterDevices();
+        }
+
+        // Pagination functions
+        function changePage(direction) {
+            const newPage = currentPage + direction;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                displayCurrentPage();
+                clearSelection(); // Clear selection when changing pages
+            }
+        }
+
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('page-size').value);
+            currentPage = 1;
+            updatePagination();
+            displayCurrentPage();
+        }
+
+        // Enhanced selection functions
+        function toggleDeviceSelection(deveui) {
+            if (selectedDevices.has(deveui)) {
+                selectedDevices.delete(deveui);
+            } else {
+                selectedDevices.add(deveui);
+            }
+            updateSelectionUI();
+        }
+
+        function toggleSelectAllPage() {
+            const checkbox = document.getElementById('select-all-page');
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageDevices = filteredDevices.slice(start, end);
+            
+            if (checkbox.checked) {
+                pageDevices.forEach(device => selectedDevices.add(device.deveui));
+            } else {
+                pageDevices.forEach(device => selectedDevices.delete(device.deveui));
+            }
+            
+            updateSelectionUI();
+        }
+
+        function selectAllVisible() {
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageDevices = filteredDevices.slice(start, end);
+            pageDevices.forEach(device => selectedDevices.add(device.deveui));
+            updateSelectionUI();
+        }
+
+        function selectAllFiltered() {
+            filteredDevices.forEach(device => selectedDevices.add(device.deveui));
+            updateSelectionUI();
+        }
+
+        function clearSelection() {
+            selectedDevices.clear();
+            updateSelectionUI();
+        }
+
+        function updateSelectionUI() {
+            const bulkAssignment = document.getElementById('bulk-assignment');
+            const selectedCount = document.getElementById('selected-count');
+            const selectionInfo = document.getElementById('selection-info');
+            
+            if (selectedDevices.size > 0) {
+                bulkAssignment.classList.remove('d-none');
+                selectedCount.textContent = selectedDevices.size;
+                
+                const start = (currentPage - 1) * pageSize;
+                const end = start + pageSize;
+                const pageDevices = filteredDevices.slice(start, end);
+                const selectedOnPage = pageDevices.filter(d => selectedDevices.has(d.deveui)).length;
+                
+                if (selectedDevices.size > pageDevices.length) {
+                    selectionInfo.textContent = `${selectedOnPage} on this page, ${selectedDevices.size} total`;
+                } else {
+                    selectionInfo.textContent = 'from current page';
+                }
+            } else {
+                bulkAssignment.classList.add('d-none');
+            }
+            
+            updateSelectAllCheckbox();
+            displayCurrentPage(); // Refresh to show selection
+        }
+
+        function updateSelectAllCheckbox() {
+            const selectAllCheckbox = document.getElementById('select-all-page');
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageDevices = filteredDevices.slice(start, end);
+            const selectedOnPage = pageDevices.filter(d => selectedDevices.has(d.deveui)).length;
+            
+            if (selectedOnPage === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (selectedOnPage === pageDevices.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+
+        // Sorting functions
+        function sortDevices(field) {
+            if (currentSort.field === field) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.direction = 'asc';
+            }
+            
+            updateSortIcons();
+            applySorting();
+            displayCurrentPage();
+        }
+
+        function updateSortIcons() {
+            document.querySelectorAll('.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            const currentHeader = document.querySelector(`[onclick="sortDevices('${currentSort.field}')"]`);
+            if (currentHeader) {
+                currentHeader.classList.add(`sort-${currentSort.direction}`);
+            }
+        }
+
+        // Device type assignment (same as before)
+        function showDeviceTypeAssignment(deveui) {
+            const device = allDevices.find(d => d.deveui === deveui);
+            if (!device) return;
+            
+            document.getElementById('selected-device-eui').value = deveui;
+            document.getElementById('selected-device-info').textContent = 
+                `${deveui}${device.name ? ' (' + device.name + ')' : ''}`;
+            
+            const selector = document.getElementById('device-type-selector');
+            selector.innerHTML = allDeviceTypes.map(type => `
+                <div class="col-md-6 mb-3">
+                    <div class="card device-type-card" onclick="selectDeviceType(${type.id})">
+                        <div class="card-body">
+                            <h6 class="card-title">${escapeHtml(type.name)}</h6>
+                            <p class="card-text">
+                                <span class="badge bg-secondary">${escapeHtml(type.device_family)}</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            new bootstrap.Modal(document.getElementById('deviceTypeModal')).show();
+        }
+
+        function selectDeviceType(typeId) {
+            document.querySelectorAll('.device-type-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            event.currentTarget.classList.add('selected');
+            document.getElementById('selected-type-id').value = typeId;
+            document.getElementById('assign-type-btn').disabled = false;
+        }
+
+        async function assignDeviceType() {
+            const deveui = document.getElementById('selected-device-eui').value;
+            const typeId = document.getElementById('selected-type-id').value;
+            
+            if (!deveui || !typeId) return;
+            
+            const btn = document.getElementById('assign-type-btn');
+            const originalText = btn.textContent;
+            
+            try {
+                btn.disabled = true;
+                btn.textContent = '🔧 Assigning...';
+                
+                const api = new APIClient('https://api.sensemy.cloud');
+                await api.put(`/v1/devices/${deveui}`, {
+                    device_type_id: parseInt(typeId)
+                });
+                
+                await loadData();
+                bootstrap.Modal.getInstance(document.getElementById('deviceTypeModal')).hide();
+                
+            } catch (err) {
+                alert('Failed to assign device type: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        async function bulkAssignType() {
+            if (selectedDevices.size === 0) return;
+            
+            const typeId = document.getElementById('bulk-type-selector').value;
+            if (!typeId) {
+                alert('Please select a device type');
+                return;
+            }
+            
+            if (!confirm(`Assign device type to ${selectedDevices.size} selected devices?`)) {
+                return;
+            }
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const promises = Array.from(selectedDevices).map(deveui => 
+                    api.put(`/v1/devices/${deveui}`, {
+                        device_type_id: parseInt(typeId)
+                    })
+                );
+                
+                await Promise.all(promises);
+                await loadData();
+                clearSelection();
+                
+            } catch (err) {
+                alert('Failed to assign device types: ' + err.message);
+            }
+        }
+
+        function showTypeLibrary() {
+            const library = document.getElementById('type-library');
+            library.innerHTML = allDeviceTypes.map(type => `
+                <div class="col-md-4 mb-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">${escapeHtml(type.name)}</h6>
+                            <p class="card-text">
+                                <span class="badge bg-info">${escapeHtml(type.device_family)}</span>
+                            </p>
+                            <small class="text-muted">ID: ${type.id}</small>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            new bootstrap.Modal(document.getElementById('typeLibraryModal')).show();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text.toString();
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

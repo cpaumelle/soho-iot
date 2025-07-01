@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sites Manager V2 - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .archived-site {
+            opacity: 0.6;
+            background-color: #f8f9fa;
+        }
+        .archived-site td {
+            color: #6c757d;
+        }
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        .sortable:hover {
+            background-color: #f8f9fa;
+        }
+        .sort-arrow {
+            float: right;
+            margin-left: 5px;
+            opacity: 0.5;
+        }
+        .sort-asc .sort-arrow::after {
+            content: "↑";
+            opacity: 1;
+        }
+        .sort-desc .sort-arrow::after {
+            content: "↓";
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Verdegris IoT Platform</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link active" href="sites.html">Sites</a>
+                <a class="nav-link" href="locations.html">Locations</a>
+                <a class="nav-link" href="devices.html">Devices</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Sites Manager <span class="badge bg-secondary">V2</span></h1>
+                        <p class="text-muted">Create, read, update, and archive facility sites</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="showAddSiteForm()">
+                        Create New Site
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search and Filter Controls -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="input-group">
+                    <span class="input-group-text">🔍</span>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search sites by name or address..." onkeyup="filterSites()">
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex gap-3 justify-content-end">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="showArchived" checked onchange="filterSites()">
+                        <label class="form-check-label" for="showArchived">Show archived</label>
+                    </div>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearSearch()">Clear</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading sites...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Sites</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadSites()">Retry</button>
+        </div>
+
+        <!-- Add/Edit Site Form -->
+        <div id="site-form-container" class="card mb-4 d-none">
+            <div class="card-header">
+                <h5 class="card-title mb-0" id="form-title">Create New Site</h5>
+            </div>
+            <div class="card-body">
+                <form id="site-form">
+                    <input type="hidden" id="site-id">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="site-name" class="form-label">Site Name *</label>
+                                <input type="text" class="form-control" id="site-name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="site-address" class="form-label">Address</label>
+                                <input type="text" class="form-control" id="site-address">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="site-latitude" class="form-label">Latitude</label>
+                                <input type="number" step="any" class="form-control" id="site-latitude">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="site-longitude" class="form-label">Longitude</label>
+                                <input type="number" step="any" class="form-control" id="site-longitude">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="site-icon" class="form-label">Icon</label>
+                                <select class="form-control" id="site-icon">
+                                    <option value="">Select icon...</option>
+                                    <option value="building">Building</option>
+                                    <option value="factory">Factory</option>
+                                    <option value="warehouse">Warehouse</option>
+                                    <option value="office">Office</option>
+                                    <option value="retail">Retail</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" id="form-submit-btn">Create Site</button>
+                        <button type="button" class="btn btn-secondary" onclick="cancelForm()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Sites Table -->
+        <div id="sites-content" class="d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Sites</h5>
+                    <small class="text-muted" id="sites-count">0 sites</small>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" onclick="sortTable('name')">
+                                        Name <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortTable('address')">
+                                        Address <span class="sort-arrow"></span>
+                                    </th>
+                                    <th class="sortable" onclick="sortTable('status')">
+                                        Status <span class="sort-arrow"></span>
+                                    </th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sites-table-body">
+                                <!-- Sites will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-sites" class="text-center py-4 d-none">
+                        <p class="text-muted">No sites found matching your criteria.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let allSites = [];
+        let filteredSites = [];
+        let editingSiteId = null;
+        let currentSort = { field: 'name', direction: 'asc' };
+
+        // Load sites on page load
+        document.addEventListener('DOMContentLoaded', loadSites);
+
+        async function loadSites() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('sites-content');
+            
+            // Show loading state
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            content.classList.add('d-none');
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const sites = await api.get('/v1/sites');
+                
+                allSites = sites;
+                filterSites(); // Apply current filter
+                
+                // Show content, hide loading
+                loading.classList.add('d-none');
+                content.classList.remove('d-none');
+                
+            } catch (err) {
+                console.error('Error loading sites:', err);
+                
+                // Show error state
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 
+                    'Failed to load sites: ' + err.message;
+            }
+        }
+
+        function filterSites() {
+            const showArchived = document.getElementById('showArchived').checked;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+            
+            let sitesToShow = allSites;
+            
+            // Filter by archived status
+            if (!showArchived) {
+                sitesToShow = sitesToShow.filter(site => !site.archived_at);
+            }
+            
+            // Filter by search term
+            if (searchTerm) {
+                sitesToShow = sitesToShow.filter(site => 
+                    (site.name && site.name.toLowerCase().includes(searchTerm)) ||
+                    (site.address && site.address.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            filteredSites = sitesToShow;
+            applySorting();
+            displaySites(filteredSites);
+            updateSitesCount();
+        }
+
+        function sortTable(field) {
+            if (currentSort.field === field) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.direction = 'asc';
+            }
+            
+            updateSortIcons();
+            applySorting();
+            displaySites(filteredSites);
+        }
+
+        function applySorting() {
+            filteredSites.sort((a, b) => {
+                let aVal, bVal;
+                
+                if (currentSort.field === 'status') {
+                    aVal = a.archived_at ? 'archived' : 'active';
+                    bVal = b.archived_at ? 'archived' : 'active';
+                } else {
+                    aVal = (a[currentSort.field] || '').toString().toLowerCase();
+                    bVal = (b[currentSort.field] || '').toString().toLowerCase();
+                }
+                
+                if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function updateSortIcons() {
+            // Remove all sort classes
+            document.querySelectorAll('.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            // Add sort class to current column
+            const currentHeader = document.querySelector(`[onclick="sortTable('${currentSort.field}')"]`);
+            if (currentHeader) {
+                currentHeader.classList.add(`sort-${currentSort.direction}`);
+            }
+        }
+
+        function updateSitesCount() {
+            const count = filteredSites.length;
+            const total = allSites.length;
+            document.getElementById('sites-count').textContent = 
+                count === total ? `${count} sites` : `${count} of ${total} sites`;
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            filterSites();
+        }
+
+        function displaySites(sites) {
+            const tbody = document.getElementById('sites-table-body');
+            const noSites = document.getElementById('no-sites');
+            
+            if (!sites || sites.length === 0) {
+                tbody.innerHTML = '';
+                noSites.classList.remove('d-none');
+                return;
+            }
+            
+            noSites.classList.add('d-none');
+            
+            tbody.innerHTML = sites.map(site => {
+                const isArchived = site.archived_at !== null;
+                const rowClass = isArchived ? 'archived-site' : '';
+                const status = isArchived ? 
+                    `<span class="badge bg-secondary">Archived</span>` : 
+                    `<span class="badge bg-success">Active</span>`;
+                
+                return `
+                    <tr class="${rowClass}">
+                        <td><strong>${escapeHtml(site.name || '')}</strong></td>
+                        <td>${escapeHtml(site.address || '-')}</td>
+                        <td>${status}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="editSite(${site.id})" title="Update Site">
+                                    ✏️
+                                </button>
+                                <a href="locations.html?site_id=${site.id}" class="btn btn-outline-info" title="Configure Locations">
+                                    📍
+                                </a>
+                                ${!isArchived ? 
+                                    `<button class="btn btn-outline-warning" onclick="archiveSite(${site.id})" title="Archive Site">
+                                        📦
+                                    </button>` : 
+                                    `<button class="btn btn-outline-success" onclick="restoreSite(${site.id})" title="Restore Site">
+                                        ↩️
+                                    </button>`
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function showAddSiteForm() {
+            editingSiteId = null;
+            document.getElementById('form-title').textContent = 'Create New Site';
+            document.getElementById('form-submit-btn').textContent = 'Create Site';
+            document.getElementById('site-form').reset();
+            document.getElementById('site-id').value = '';
+            document.getElementById('site-form-container').classList.remove('d-none');
+            document.getElementById('site-name').focus();
+        }
+
+        function editSite(siteId) {
+            const site = allSites.find(s => s.id === siteId);
+            if (!site) return;
+            
+            editingSiteId = siteId;
+            document.getElementById('form-title').textContent = 'Update Site';
+            document.getElementById('form-submit-btn').textContent = 'Update Site';
+            document.getElementById('site-id').value = site.id;
+            document.getElementById('site-name').value = site.name || '';
+            document.getElementById('site-address').value = site.address || '';
+            document.getElementById('site-latitude').value = site.latitude || '';
+            document.getElementById('site-longitude').value = site.longitude || '';
+            document.getElementById('site-icon').value = site.icon_name || '';
+            
+            document.getElementById('site-form-container').classList.remove('d-none');
+            document.getElementById('site-name').focus();
+        }
+
+        function cancelForm() {
+            document.getElementById('site-form-container').classList.add('d-none');
+            document.getElementById('site-form').reset();
+            editingSiteId = null;
+        }
+
+        async function archiveSite(siteId) {
+            const site = allSites.find(s => s.id === siteId);
+            if (!site) return;
+            
+            if (!confirm('Archive site "' + site.name + '"? This will preserve all historical data but mark the site as inactive.')) {
+                return;
+            }
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                await api.put('/v1/sites/' + siteId, {
+                    ...site,
+                    archived_at: new Date().toISOString()
+                });
+                
+                // Reload sites to reflect changes
+                await loadSites();
+                
+            } catch (err) {
+                alert('Failed to archive site: ' + err.message);
+            }
+        }
+
+        async function restoreSite(siteId) {
+            const site = allSites.find(s => s.id === siteId);
+            if (!site) return;
+            
+            if (!confirm('Restore site "' + site.name + '"? This will make the site active again.')) {
+                return;
+            }
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                await api.put('/v1/sites/' + siteId, {
+                    ...site,
+                    archived_at: null
+                });
+                
+                // Reload sites to reflect changes
+                await loadSites();
+                
+            } catch (err) {
+                alert('Failed to restore site: ' + err.message);
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('site-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('form-submit-btn');
+            const originalText = submitBtn.textContent;
+            
+            try {
+                submitBtn.disabled = true;
+                submitBtn.textContent = editingSiteId ? 'Updating...' : 'Creating...';
+                
+                const formData = {
+                    name: document.getElementById('site-name').value.trim(),
+                    address: document.getElementById('site-address').value.trim() || null,
+                    latitude: parseFloat(document.getElementById('site-latitude').value) || null,
+                    longitude: parseFloat(document.getElementById('site-longitude').value) || null,
+                    icon_name: document.getElementById('site-icon').value || null
+                };
+                
+                const api = new APIClient('https://api.sensemy.cloud');
+                
+                if (editingSiteId) {
+                    await api.put('/v1/sites/' + editingSiteId, formData);
+                } else {
+                    await api.post('/v1/locations/site', formData);
+                }
+                
+                await loadSites();
+                cancelForm();
+                
+            } catch (err) {
+                alert('Failed to save site: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        });
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

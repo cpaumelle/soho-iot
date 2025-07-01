@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.5/dist/htmx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #f7f8fa; }
+        .navbar-brand { font-weight: 600; }
+        .breadcrumb { background: none; margin-bottom: 0; }
+        .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); }
+        .card:hover { box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15); }
+        .section-title { font-size: 2rem; font-weight: 600; margin-bottom: 1rem; }
+        .nav-link.active { font-weight: 600; color: #0d6efd !important; }
+        .icon-picker span.selected { border: 2px solid #0d6efd; background-color: #e7f1ff; }
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --dark-color: #212529;
+        }
+        
+        .navbar-brand {
+            font-weight: 600;
+        }
+        
+        .card {
+            border: none;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            transition: box-shadow 0.15s ease-in-out;
+        }
+        
+        .card:hover {
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, var(--primary-color), #0056b3);
+            color: white;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .status-online { background-color: var(--success-color); }
+        .status-offline { background-color: var(--danger-color); }
+        .status-warning { background-color: var(--warning-color); }
+        
+        .service-tab {
+            cursor: pointer;
+            padding: 1rem;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .service-tab:hover {
+            background-color: #f8f9fa;
+            border-bottom-color: var(--primary-color);
+        }
+        
+        .service-tab.active {
+            background-color: #f8f9fa;
+            border-bottom-color: var(--primary-color);
+            font-weight: 600;
+        }
+        
+        .data-table {
+            font-size: 0.9rem;
+        }
+        
+        .btn-action {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .form-floating label {
+            color: var(--secondary-color);
+        }
+        
+        #content-area {
+            min-height: 500px;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 1rem 0;
+        }
+        .grid-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .card { border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 1.5rem; background: white; margin-bottom: 1.5rem; }
+        .map-container { height: 250px; border-radius: 8px; width: 100%; display: block; overflow: hidden; position: relative; }
+        #siteMap { height: 300px !important; border-radius: 8px; width: 100%; display: block; overflow: hidden; position: relative; }
+        .grid-cols > .card { min-width: 320px; }
+        .btn-pill { border-radius: 50px; }
+        .entity-row { display: flex; align-items: center; margin-bottom: 0.5rem; gap: 0.5rem; }
+        .nested { margin-left: 2rem; }
+        .crud-icons button { border: none; background: transparent; color: #666; font-size: 1rem; }
+        .crud-icons button:hover { color: #000; }
+        .entity-label { display: flex; align-items: center; gap: 0.5rem; flex-grow: 1; font-weight: 500; }
+        .icon-picker span { cursor: pointer; font-size: 1.2rem; margin: 0 4px; display: inline-block; padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; transition: all 0.2s ease; }
+        .icon-picker span:hover { border-color: #ccc; }
+        .icon-picker span.selected { border: 2px solid #0d6efd; background-color: #e7f1ff; }
+        #addressSuggestions {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #addressSuggestions .list-group-item {
+            cursor: pointer;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+        #addressSuggestions .list-group-item:hover {
+            background-color: #f8f9fa;
+        }
+        #sites-card { /* display: flex; flex-direction: column; */ }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">IoT Platform</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link active" id="nav-analytics" href="#" onclick="showSection('analytics')"><i class="bi bi-graph-up"></i> Analytics</a>
+                <a class="nav-link" id="nav-devices" href="#" onclick="showSection('devices')"><i class="bi bi-cpu"></i> Devices</a>
+                <a class="nav-link" id="nav-monitoring" href="#" onclick="showSection('monitoring')"><i class="bi bi-activity"></i> Monitoring</a>
+            </div>
+        </div>
+    </nav>
+    <div class="container-fluid mt-4">
+        <nav id="breadcrumbs" style="display:none;">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="#" onclick="showSection('analytics')">Analytics</a></li>
+                <li class="breadcrumb-item active" id="breadcrumb-current"></li>
+            </ol>
+        </nav>
+
+        <div id="section-analytics">
+            <div class="section-title"><i class="bi bi-graph-up"></i> Analytics Dashboard</div>
+            <div class="row mb-4" id="analyticsCardsRow"></div>
+            <div class="card mb-4">
+                <div class="card-header"><i class="bi bi-bar-chart"></i> Event Trends</div>
+                <div class="card-body">
+                    <canvas id="analyticsChart" height="100"></canvas>
+                </div>
+            </div>
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-exclamation-circle"></i> Recent Alerts</h5>
+                        </div>
+                        <div class="card-body" id="recentAlertsBody">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="section-devices" style="display:none;">
+            <div class="section-title"><i class="bi bi-cpu"></i> Device Management</div>
+            <ul class="nav nav-tabs mb-3" id="deviceTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-all-devices" data-bs-toggle="tab" data-bs-target="#all-devices" type="button" role="tab">All Devices</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-orphan-devices" data-bs-toggle="tab" data-bs-target="#orphan-devices" type="button" role="tab">Orphan Devices</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-sites-spaces" data-bs-toggle="tab" data-bs-target="#sites-spaces" type="button" role="tab">Sites & Spaces</button>
+                </li>
+            </ul>
+            <div class="tab-content" id="deviceTabsContent">
+                <!-- All Devices Tab -->
+                <div class="tab-pane fade show active" id="all-devices" role="tabpanel">
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h5 class="mb-3 d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-cpu"></i> All Devices</span>
+                                <button class="btn btn-primary btn-sm" onclick="openAddDeviceModal()"><i class="bi bi-plus"></i> Add Device</button>
+                            </h5>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Device ID</th>
+                                            <th>Name</th>
+                                            <th>Type</th>
+                                            <th>Location</th>
+                                            <th>Status</th>
+                                            <th>Last Seen</th>
+                                            <th>Battery</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="allDevicesTableBody">
+                                        <tr>
+                                            <td>sensor-001</td>
+                                            <td>Temperature Sensor A1</td>
+                                            <td>Temperature</td>
+                                            <td><a href="#" onclick="gotoLocation('My House', 'Ground/Lounge')">My House / Ground/Lounge</a></td>
+                                            <td>Online</td>
+                                            <td>2 min ago</td>
+                                            <td>85%</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary btn-action">Edit</button>
+                                                <button class="btn btn-sm btn-outline-danger btn-action">Reset</button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>sensor-002</td>
+                                            <td>Humidity Sensor B2</td>
+                                            <td>Humidity</td>
+                                            <td><a href="#" onclick="gotoLocation('My House', 'Ground/Kitchen')">My House / Ground/Kitchen</a></td>
+                                            <td>Online</td>
+                                            <td>1 min ago</td>
+                                            <td>72%</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary btn-action">Edit</button>
+                                                <button class="btn btn-sm btn-outline-danger btn-action">Reset</button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>gateway-001</td>
+                                            <td>Main Gateway</td>
+                                            <td>Gateway</td>
+                                            <td><a href="#" onclick="gotoLocation('Summer Cabin', '')">Summer Cabin</a></td>
+                                            <td>Warning</td>
+                                            <td>15 min ago</td>
+                                            <td>N/A</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary btn-action">Edit</button>
+                                                <button class="btn btn-sm btn-outline-danger btn-action">Reset</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Orphan Devices Tab -->
+                <div class="tab-pane fade" id="orphan-devices" role="tabpanel">
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h5 class="mb-3"><i class="bi bi-question-circle"></i> Orphan Devices</h5>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Device ID</th>
+                                            <th>First Seen</th>
+                                            <th>Last Payload</th>
+                                            <th>Assign Location</th>
+                                            <th>Assign Type</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="orphanDevicesTableBody">
+                                        <tr>
+                                            <td>sensor-003</td>
+                                            <td>2025-06-06 14:23:15</td>
+                                            <td>2025-06-06 14:25:00</td>
+                                            <td><select class="form-select form-select-sm"><option>Assign Site...</option></select></td>
+                                            <td><select class="form-select form-select-sm"><option>Assign Type...</option></select></td>
+                                            <td><button class="btn btn-sm btn-success">Claim</button></td>
+                                        </tr>
+                                        <tr>
+                                            <td>sensor-004</td>
+                                            <td>2025-06-06 14:24:10</td>
+                                            <td>2025-06-06 14:26:10</td>
+                                            <td><select class="form-select form-select-sm"><option>Assign Site...</option></select></td>
+                                            <td><select class="form-select form-select-sm"><option>Assign Type...</option></select></td>
+                                            <td><button class="btn btn-sm btn-success">Claim</button></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Sites & Spaces Tab -->
+                <div class="tab-pane fade" id="sites-spaces" role="tabpanel">
+                    <div class="card" style="padding:0; height:600px; min-height:400px;">
+                        <iframe src="location-manager.html" style="width:100%; height:100%; border:0; border-radius:12px; min-height:400px;" title="Location Manager"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="section-monitoring" style="display:none;">
+            <div class="section-title"><i class="bi bi-activity"></i> Platform Monitoring</div>
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><i class="bi bi-arrow-down-circle"></i> Ingestion Monitoring</div>
+                        <div class="card-body">
+                            <div class="alert alert-success">Ingestion service healthy.</div>
+                            <ul>
+                                <li>Messages Today: ${monitoringData.ingestion.messagesToday}</li>
+                                <li>Avg Latency: ${monitoringData.ingestion.avgLatency}</li>
+                                <li>Failed Today: ${monitoringData.ingestion.failedToday}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><i class="bi bi-gear"></i> Processing Monitoring</div>
+                        <div class="card-body">
+                            <div class="alert alert-warning">Processing service degraded.</div>
+                            <ul>
+                                <li>Active Jobs: ${monitoringData.processing.activeJobs}</li>
+                                <li>Processed Today: ${monitoringData.processing.processedToday}</li>
+                                <li>Queued: ${monitoringData.processing.queued}</li>
+                                <li>Failed: ${monitoringData.processing.failed}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showSection(section) {
+            document.getElementById('section-analytics').style.display = (section === 'analytics') ? '' : 'none';
+            document.getElementById('section-devices').style.display = (section === 'devices') ? '' : 'none';
+            document.getElementById('section-monitoring').style.display = (section === 'monitoring') ? '' : 'none';
+            document.getElementById('nav-analytics').classList.toggle('active', section === 'analytics');
+            document.getElementById('nav-devices').classList.toggle('active', section === 'devices');
+            document.getElementById('nav-monitoring').classList.toggle('active', section === 'monitoring');
+            document.getElementById('breadcrumbs').style.display = (section !== 'analytics');
+            document.getElementById('breadcrumb-current').textContent = section.charAt(0).toUpperCase() + section.slice(1);
+
+            // Initialize map when showing devices section
+            if (section === 'devices' && !map) {
+                initMapIfNeeded();
+            }
+        }
+        showSection('analytics');
+    </script>
+    <script>
+    // Mock data for demonstration
+    const devices = [
+        { id: 'sensor-001', name: 'Temperature Sensor A1', type: 'Temperature', location: {site: 'My House', space: 'Ground/Lounge'}, status: 'Online', lastSeen: '2 min ago', battery: '85%' },
+        { id: 'sensor-002', name: 'Humidity Sensor B2', type: 'Humidity', location: {site: 'My House', space: 'Ground/Kitchen'}, status: 'Online', lastSeen: '1 min ago', battery: '72%' },
+        { id: 'gateway-001', name: 'Main Gateway', type: 'Gateway', location: {site: 'Summer Cabin', space: ''}, status: 'Warning', lastSeen: '15 min ago', battery: 'N/A' }
+    ];
+    const orphanDevices = [
+        { id: 'sensor-003', firstSeen: '2025-06-06 14:23:15', lastPayload: '2025-06-06 14:25:00' },
+        { id: 'sensor-004', firstSeen: '2025-06-06 14:24:10', lastPayload: '2025-06-06 14:26:10' }
+    ];
+
+    // Location Manager State
+    let sites = [
+        { id: 1, name: "My House", icon: "🏡", lat: 51.398728664279396, lng: -0.865592805733446 },
+        { id: 2, name: "Summer Cabin", icon: "🏕️", lat: 48.63749365484096, lng: -2.0566872813411514 }
+    ];
+    let currentSiteId = 1;
+    let spaceState = {
+        1: [ // My House
+            { id: "f1", name: "Ground", icon: "🏠", rooms: [
+                { id: "r1", name: "Lounge", icon: "🛋️", zones: [] },
+                { id: "r2", name: "Kitchen", icon: "🍳", zones: [] }
+            ]}
+        ],
+        2: [] // Summer Cabin
+    };
+    let editingSpace = null, editingSite = null;
+    let map = null;
+    let markers = {};
+    let mapInitialized = false;
+
+    function initMapIfNeeded() {
+        if (mapInitialized) return;
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) return;
+        map = L.map('map').setView([51.3987, -0.8656], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        markers = {};
+        sites.forEach(site => {
+            const marker = L.marker([site.lat, site.lng]).addTo(map)
+                .bindPopup(`${site.icon} ${site.name}`)
+                .on('click', () => {
+                    currentSiteId = site.id;
+                    renderSiteDropdown();
+                    renderSpaces();
+                });
+            markers[site.id] = marker;
+        });
+        fitMapToMarkers();
+        mapInitialized = true;
+    }
+
+    function fitMapToMarkers() {
+        if (!map) return;
+        map.invalidateSize();
+        const markerList = Object.values(markers);
+        if (markerList.length === 1) {
+            map.setView(markerList[0].getLatLng(), 6);
+        } else if (markerList.length > 1) {
+            const markerBounds = L.latLngBounds([]);
+            markerList.forEach(marker => {
+                markerBounds.extend(marker.getLatLng());
+            });
+            map.fitBounds(markerBounds, {
+                padding: [50, 50],
+                maxZoom: 10
+            });
+        }
+    }
+
+    function renderSiteDropdown() {
+        const sel = document.getElementById("siteSelect");
+        if (!sel) return;
+        sel.innerHTML = sites.map(site =>
+            `<option value="${site.id}" ${site.id === currentSiteId ? 'selected' : ''}>
+                ${site.icon} ${site.name}
+            </option>`).join("");
+    }
+
+    function selectSiteFromDropdown() {
+        const sel = document.getElementById("siteSelect");
+        if (!sel) return;
+        const id = +sel.value;
+        currentSiteId = id;
+        const marker = markers[id];
+        if (marker && map) {
+            map.setView(marker.getLatLng(), 10);
+            marker.openPopup();
+        }
+        renderSpaces();
+    }
+
+    function renderSpaces() {
+        const container = document.getElementById("spacesHierarchy");
+        const site = sites.find(s => s.id === currentSiteId);
+        const data = spaceState[currentSiteId] || [];
+        document.getElementById("selectedSiteName").textContent = site?.name || 'Selected Site';
+        if (!container) return;
+        container.innerHTML = "";
+        if (data.length === 0) {
+            container.innerHTML = `<div class="text-muted">No spaces defined for this site yet. Start by adding a floor.</div>`;
+            return;
+        }
+        data.forEach(floor => {
+            const floorEl = document.createElement("div");
+            floorEl.className = "entity-row";
+            floorEl.innerHTML = `
+                <div class="entity-label">${floor.icon || ""} ${floor.name}</div>
+                <div class="crud-icons">
+                    <button onclick="editSpace('floor', '${floor.id}')"><i class="bi bi-pencil"></i></button>
+                    <button onclick="addRoom('${floor.id}')"><i class="bi bi-plus-square"></i></button>
+                </div>`;
+            container.appendChild(floorEl);
+            (floor.rooms || []).forEach(room => {
+                const roomEl = document.createElement("div");
+                roomEl.className = "entity-row nested";
+                roomEl.innerHTML = `
+                    <div class="entity-label">${room.icon || ""} ${room.name}</div>
+                    <div class="crud-icons">
+                        <button onclick="editSpace('room', '${room.id}', '${floor.id}')"><i class="bi bi-pencil"></i></button>
+                        <button onclick="addZone('${floor.id}', '${room.id}')"><i class="bi bi-plus-square"></i></button>
+                    </div>`;
+                container.appendChild(roomEl);
+                (room.zones || []).forEach(zone => {
+                    const zoneEl = document.createElement("div");
+                    zoneEl.className = "entity-row nested";
+                    zoneEl.style.marginLeft = "4rem";
+                    const iconDisplay = zone.icon ? `${zone.icon} ` : '';
+                    zoneEl.innerHTML = `
+                        <div class="entity-label">${iconDisplay}${zone.name}</div>
+                        <div class="crud-icons">
+                            <button onclick="editSpace('zone', '${zone.id}', '${floor.id}', '${room.id}')"><i class="bi bi-pencil"></i></button>
+                        </div>`;
+                    container.appendChild(zoneEl);
+                });
+            });
+        });
+    }
+
+    // Only initialize map when Sites & Spaces tab is shown
+    const sitesSpacesTab = document.getElementById('tab-sites-spaces');
+    function showSitesSpacesTab() {
+        renderSiteDropdown();
+        renderSpaces();
+        setTimeout(() => {
+            initMapIfNeeded();
+            if (map) map.invalidateSize();
+        }, 200);
+    }
+    if (sitesSpacesTab) {
+        sitesSpacesTab.addEventListener('shown.bs.tab', showSitesSpacesTab);
+        // If Sites & Spaces is the default active tab, render immediately
+        if (sitesSpacesTab.classList.contains('active')) {
+            showSitesSpacesTab();
+        }
+    }
+
+    // Modal map logic
+    let siteMap = null;
+    let siteMarker = null;
+    let siteMapInitialized = false;
+
+    function initializeSiteMap() {
+        if (siteMapInitialized) return siteMap;
+        const siteMapContainer = document.getElementById('siteMap');
+        if (!siteMapContainer) return;
+        siteMap = L.map('siteMap').setView([51.3987, -0.8656], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(siteMap);
+        siteMap.on('click', function(e) {
+            if (siteMarker) {
+                siteMarker.setLatLng(e.latlng);
+            } else {
+                siteMarker = L.marker(e.latlng).addTo(siteMap);
+            }
+        });
+        siteMapInitialized = true;
+        return siteMap;
+    }
+
+    document.getElementById('siteModal').addEventListener('shown.bs.modal', function () {
+        setTimeout(() => {
+            initializeSiteMap();
+            if (siteMap) siteMap.invalidateSize();
+        }, 200);
+    });
+
+    function openSiteModal() {
+        editingSite = null;
+        document.getElementById("siteNameInput").value = "";
+        document.getElementById("siteAddressInput").value = "";
+        const iconPicker = document.getElementById("siteIconPicker");
+        iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+        iconPicker.querySelector("span").classList.add("selected");
+        // Reset map view and marker
+        setTimeout(() => {
+            if (siteMap) {
+                siteMap.setView([51.3987, -0.8656], 13);
+                if (siteMarker) {
+                    siteMap.removeLayer(siteMarker);
+                    siteMarker = null;
+                }
+            }
+        }, 300);
+        new bootstrap.Modal('#siteModal').show();
+    }
+
+    function editSelectedSite() {
+        const site = sites.find(s => s.id === currentSiteId);
+        if (!site) return;
+        editingSite = site;
+        document.getElementById("siteNameInput").value = site.name;
+        document.querySelectorAll("#siteIconPicker span").forEach(s => {
+            s.classList.toggle("selected", s.textContent === site.icon);
+        });
+        new bootstrap.Modal('#siteModal').show();
+    }
+
+    function saveSite() {
+        const name = document.getElementById("siteNameInput").value.trim();
+        const address = document.getElementById("siteAddressInput").value.trim();
+        const icon = document.querySelector("#siteIconPicker span.selected")?.textContent || "🏠";
+        
+        if (!name) {
+            alert("Please enter a site name");
+            return;
+        }
+        
+        if (!siteMarker) {
+            alert("Please select a location on the map");
+            return;
+        }
+        
+        const latlng = siteMarker.getLatLng();
+        
+        try {
+            if (editingSite) {
+                editingSite.name = name;
+                editingSite.icon = icon;
+                editingSite.lat = latlng.lat;
+                editingSite.lng = latlng.lng;
+                markers[editingSite.id].setLatLng(latlng).setPopupContent(`${icon} ${name}`);
+            } else {
+                const id = Date.now();
+                const newSite = { 
+                    id, 
+                    name, 
+                    icon, 
+                    lat: latlng.lat, 
+                    lng: latlng.lng 
+                };
+                sites.push(newSite);
+                
+                const marker = L.marker(latlng)
+                    .addTo(map)
+                    .bindPopup(`${icon} ${name}`)
+                    .on('click', () => {
+                        currentSiteId = id;
+                        renderSiteDropdown();
+                        renderSpaces();
+                    });
+                markers[id] = marker;
+                spaceState[id] = [];
+                currentSiteId = id;
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById("siteModal")).hide();
+            renderSiteDropdown();
+            renderSpaces();
+            fitMapToMarkers();
+            
+        } catch (error) {
+            console.error("Error saving site:", error);
+            alert("Error saving site: " + error.message);
+        }
+    }
+
+    function addFloor() {
+        editingSpace = { level: 'floor' };
+        document.getElementById("spaceNameInput").value = "";
+        const iconPicker = document.getElementById("spaceIconPicker");
+        iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+        iconPicker.querySelector("span").classList.add("selected");
+        new bootstrap.Modal('#spaceModal').show();
+    }
+
+    function addRoom(floorId) {
+        editingSpace = { level: 'room', floorId };
+        document.getElementById("spaceNameInput").value = "";
+        const iconPicker = document.getElementById("spaceIconPicker");
+        iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+        iconPicker.querySelector("span").classList.add("selected");
+        new bootstrap.Modal('#spaceModal').show();
+    }
+
+    function addZone(floorId, roomId) {
+        editingSpace = { level: 'zone', floorId, roomId };
+        document.getElementById("spaceNameInput").value = "";
+        const iconPicker = document.getElementById("spaceIconPicker");
+        iconPicker.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+        iconPicker.querySelector("span").classList.add("selected");
+        new bootstrap.Modal('#spaceModal').show();
+    }
+
+    function editSpace(level, id, floorId, roomId) {
+        editingSpace = { level, id, floorId, roomId };
+        const floor = spaceState[currentSiteId].find(f => f.id === floorId || f.id === id);
+        const room = level === 'room' ? floor.rooms.find(r => r.id === id) :
+                    level === 'zone' ? floor.rooms.find(r => r.id === roomId) : null;
+        const zone = level === 'zone' ? room.zones.find(z => z.id === id) : null;
+        const item = { floor, room, zone }[level];
+        document.getElementById("spaceNameInput").value = item.name;
+        document.querySelectorAll("#spaceIconPicker span").forEach(s => {
+            s.classList.toggle("selected", s.textContent === item.icon);
+        });
+        new bootstrap.Modal('#spaceModal').show();
+    }
+
+    function saveSpace() {
+        const name = document.getElementById("spaceNameInput").value.trim();
+        const icon = document.querySelector("#spaceIconPicker span.selected")?.textContent || "🏠";
+        
+        if (!name) {
+            alert("Please enter a name for the space");
+            return;
+        }
+
+        const { level, id, floorId, roomId } = editingSpace;
+        
+        try {
+            if (level === 'floor') {
+                if (!id) {
+                    if (!spaceState[currentSiteId]) {
+                        spaceState[currentSiteId] = [];
+                    }
+                    spaceState[currentSiteId].push({ 
+                        id: `f${Date.now()}`, 
+                        name, 
+                        icon, 
+                        rooms: [] 
+                    });
+                } else {
+                    const floor = spaceState[currentSiteId].find(f => f.id === id);
+                    if (floor) {
+                        floor.name = name;
+                        floor.icon = icon;
+                    }
+                }
+            } else if (level === 'room') {
+                const floor = spaceState[currentSiteId].find(f => f.id === floorId);
+                if (!floor) {
+                    throw new Error("Parent floor not found");
+                }
+                
+                if (!id) {
+                    floor.rooms.push({ 
+                        id: `r${Date.now()}`, 
+                        name, 
+                        icon, 
+                        zones: [] 
+                    });
+                } else {
+                    const room = floor.rooms.find(r => r.id === id);
+                    if (room) {
+                        room.name = name;
+                        room.icon = icon;
+                    }
+                }
+            } else if (level === 'zone') {
+                const floor = spaceState[currentSiteId].find(f => f.id === floorId);
+                if (!floor) {
+                    throw new Error("Parent floor not found");
+                }
+                
+                const room = floor.rooms.find(r => r.id === roomId);
+                if (!room) {
+                    throw new Error("Parent room not found");
+                }
+                
+                if (!id) {
+                    room.zones.push({ 
+                        id: `z${Date.now()}`, 
+                        name, 
+                        icon 
+                    });
+                } else {
+                    const zone = room.zones.find(z => z.id === id);
+                    if (zone) {
+                        zone.name = name;
+                        zone.icon = icon;
+                    }
+                }
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById("spaceModal")).hide();
+            renderSpaces();
+            
+        } catch (error) {
+            console.error("Error saving space:", error);
+            alert("Error saving space: " + error.message);
+        }
+    }
+
+    async function searchAddress(query = null, showSuggestions = false) {
+        const searchQuery = query || document.getElementById('siteAddressInput').value.trim();
+        
+        if (!searchQuery) {
+            alert('Please enter an address to search');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`);
+            const data = await response.json();
+            
+            if (showSuggestions) {
+                const suggestionsDiv = document.getElementById('addressSuggestions');
+                suggestionsDiv.innerHTML = '';
+                if (data.length > 0) {
+                    data.forEach(result => {
+                        const item = document.createElement('button');
+                        item.className = 'list-group-item list-group-item-action';
+                        item.textContent = result.display_name;
+                        item.onclick = () => {
+                            selectAddress(result);
+                            setTimeout(() => {
+                                const latlng = [parseFloat(result.lat), parseFloat(result.lon)];
+                                siteMap.setView(latlng, 16);
+                                if (siteMarker) {
+                                    siteMarker.setLatLng(latlng);
+                                } else {
+                                    siteMarker = L.marker(latlng).addTo(siteMap);
+                                }
+                            }, 100);
+                        };
+                        suggestionsDiv.appendChild(item);
+                    });
+                    suggestionsDiv.style.display = 'block';
+                } else {
+                    suggestionsDiv.style.display = 'none';
+                }
+            } else if (data.length > 0) {
+                selectAddress(data[0]);
+                setTimeout(() => {
+                    const latlng = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+                    siteMap.setView(latlng, 16);
+                    if (siteMarker) {
+                        siteMarker.setLatLng(latlng);
+                    } else {
+                        siteMarker = L.marker(latlng).addTo(siteMap);
+                    }
+                }, 100);
+            } else {
+                alert('No results found for this address');
+            }
+        } catch (error) {
+            console.error('Error searching address:', error);
+            alert('Error searching address. Please try again.');
+        }
+    }
+
+    function selectAddress(result) {
+        document.getElementById('siteAddressInput').value = result.display_name;
+        
+        if (!siteMap) {
+            siteMap = initializeSiteMap();
+        }
+        
+        const latlng = [parseFloat(result.lat), parseFloat(result.lon)];
+        siteMap.setView(latlng, 16);
+        
+        if (siteMarker) {
+            siteMarker.setLatLng(latlng);
+        } else {
+            siteMarker = L.marker(latlng).addTo(siteMap);
+        }
+        
+        document.getElementById('addressSuggestions').style.display = 'none';
+    }
+
+    // Initialize event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize icon pickers
+        ['siteIconPicker', 'spaceIconPicker'].forEach(id => {
+            const picker = document.getElementById(id);
+            if (picker) {
+                picker.addEventListener('click', function(e) {
+                    if (e.target.tagName === 'SPAN') {
+                        this.querySelectorAll("span").forEach(s => s.classList.remove("selected"));
+                        e.target.classList.add("selected");
+                    }
+                });
+            }
+        });
+
+        // Initialize address search
+        const addressInput = document.getElementById('siteAddressInput');
+        if (addressInput) {
+            addressInput.addEventListener('input', function() {
+                clearTimeout(addressSearchTimeout);
+                const query = this.value.trim();
+                
+                if (query.length < 3) {
+                    document.getElementById('addressSuggestions').style.display = 'none';
+                    return;
+                }
+                
+                addressSearchTimeout = setTimeout(() => {
+                    searchAddress(query, true);
+                }, 300);
+            });
+        }
+
+        // Close suggestions when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#siteAddressInput') && !e.target.closest('#addressSuggestions')) {
+                document.getElementById('addressSuggestions').style.display = 'none';
+            }
+        });
+
+        // Initialize initial state
+        renderSiteDropdown();
+        renderSpaces();
+        showSection('analytics');
+    });
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Analytics chart
+        const ctx = document.getElementById('analyticsChart');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: analyticsData.eventLabels,
+                    datasets: [{
+                        label: 'Events',
+                        data: analyticsData.eventTrends,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: false } }
+                }
+            });
+        }
+        // Recent alerts
+        const alertsBody = document.getElementById('recentAlertsBody');
+        if (alertsBody) {
+            analyticsData.recentAlerts.forEach(alert => {
+                const div = document.createElement('div');
+                div.className = `alert alert-${alert.type} alert-sm`;
+                div.innerHTML = `<strong>${alert.type.charAt(0).toUpperCase() + alert.type.slice(1)}:</strong> ${alert.message}<small class="d-block text-muted">${alert.time}</small>`;
+                alertsBody.appendChild(div);
+            });
+        }
+    });
+    </script>
+    <script>
+    // Render analytics cards using JS
+    function renderAnalyticsCards() {
+        const row = document.getElementById('analyticsCardsRow');
+        if (!row) return;
+        row.innerHTML = `
+            <div class="col-md-3">
+                <div class="card metric-card bg-primary text-white mb-3">
+                    <div class="card-body text-center">
+                        <i class="bi bi-bar-chart fs-2 mb-2"></i>
+                        <h3 class="mb-0">${analyticsData.eventsToday}</h3>
+                        <small>Events Today</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card bg-success text-white mb-3" style="cursor:pointer;" onclick="goToDevices()">
+                    <div class="card-body text-center">
+                        <i class="bi bi-people fs-2 mb-2"></i>
+                        <h3 class="mb-0">${analyticsData.activeDevices}</h3>
+                        <small>Active Devices</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card bg-warning text-white mb-3">
+                    <div class="card-body text-center">
+                        <i class="bi bi-exclamation-triangle fs-2 mb-2"></i>
+                        <h3 class="mb-0">${analyticsData.alerts}</h3>
+                        <small>Alerts</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card bg-info text-white mb-3">
+                    <div class="card-body text-center">
+                        <i class="bi bi-database fs-2 mb-2"></i>
+                        <h3 class="mb-0">${analyticsData.dataProcessed}</h3>
+                        <small>Data Processed</small>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        renderAnalyticsCards();
+    });
+    </script>
+    <script>
+    function renderAllDevicesTable() {
+        const tbody = document.getElementById('allDevicesTableBody');
+        tbody.innerHTML = '';
+        devices.forEach(device => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${device.id}</td>
+                <td>${device.name}</td>
+                <td>${device.type}</td>
+                <td><a href="#" onclick="gotoLocation('${device.location.site}', '${device.location.space}')">${device.location.site}${device.location.space ? ' / ' + device.location.space : ''}</a></td>
+                <td>${device.status}</td>
+                <td>${device.lastSeen}</td>
+                <td>${device.battery}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary btn-action">Edit</button>
+                    <button class="btn btn-sm btn-outline-danger btn-action">Reset</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderOrphanDevicesTable() {
+        const tbody = document.getElementById('orphanDevicesTableBody');
+        tbody.innerHTML = '';
+        orphanDevices.forEach(device => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${device.id}</td>
+                <td>${device.firstSeen}</td>
+                <td>${device.lastPayload}</td>
+                <td><select class="form-select form-select-sm"><option>Assign Site...</option></select></td>
+                <td><select class="form-select form-select-sm"><option>Assign Type...</option></select></td>
+                <td><button class="btn btn-sm btn-success">Claim</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function gotoLocation(site, space) {
+        // Switch to Sites & Spaces tab
+        const tab = new bootstrap.Tab(document.querySelector('#tab-sites-spaces'));
+        tab.show();
+        // Optionally, highlight or scroll to the relevant site/space in the location manager
+        setTimeout(() => {
+            // Example: highlight site in dropdown
+            const siteSelect = document.getElementById('siteSelect');
+            if (siteSelect) {
+                for (let i = 0; i < siteSelect.options.length; i++) {
+                    if (siteSelect.options[i].text.includes(site)) {
+                        siteSelect.selectedIndex = i;
+                        siteSelect.dispatchEvent(new Event('change'));
+                        break;
+                    }
+                }
+            }
+        }, 300);
+    }
+    </script>
+
+    <!-- Site Modal -->
+    <div class="modal fade" id="siteModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Site</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="siteNameInput" class="form-label">Site Name</label>
+                                <input type="text" class="form-control" id="siteNameInput" placeholder="Enter site name">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Site Icon</label>
+                                <div class="icon-picker" id="siteIconPicker">
+                                    <span>🏠</span><span>🏢</span><span>🏣</span><span>🏤</span><span>🏥</span>
+                                    <span>🏦</span><span>🏨</span><span>🏪</span><span>🏫</span><span>🏬</span>
+                                    <span>🏭</span><span>🏰</span><span>🏯</span><span>🏛️</span><span>⛪</span>
+                                    <span>🕌</span><span>🕍</span><span>⛩️</span><span>🕋</span><span>⛺</span>
+                                    <span>🏕️</span><span>🏖️</span><span>🏗️</span><span>🏘️</span><span>🏙️</span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="siteAddressInput" class="form-label">Address</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="siteAddressInput" placeholder="Enter site address">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="searchAddress()">
+                                        <i class="bi bi-search"></i> Search
+                                    </button>
+                                </div>
+                                <div id="addressSuggestions" class="list-group position-absolute" style="width: calc(100% - 50px); z-index: 1000; display: none;"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div id="siteMap" style="height: 300px; border-radius: 8px;" class="mb-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSite()">Save Site</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Space Modal -->
+    <div class="modal fade" id="spaceModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Edit Space</h5></div>
+                <div class="modal-body">
+                    <input type="text" id="spaceNameInput" class="form-control mb-2" placeholder="Name">
+                    <div class="icon-picker" id="spaceIconPicker">
+                        <span>🏠</span><span>🏢</span><span>🏣</span><span>🏤</span><span>🏥</span>
+                        <span>🏦</span><span>🏨</span><span>🏪</span><span>🏫</span><span>🏬</span>
+                        <span>🏭</span><span>🏰</span><span>🏯</span><span>🏛️</span><span>⛪</span>
+                        <span>🕌</span><span>🕍</span><span>⛩️</span><span>🕋</span><span>⛺</span>
+                        <span>🏕️</span><span>🏖️</span><span>🏗️</span><span>🏘️</span><span>🏙️</span>
+                        <span>🏚️</span><span>🏛️</span><span>🏜️</span><span>🏝️</span><span>🏞️</span>
+                        <span>🏟️</span><span>🏠</span><span>🏡</span><span>🏢</span><span>🏣</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary" onclick="saveSpace()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

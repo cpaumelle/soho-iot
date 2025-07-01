@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locations Manager V5 - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .site-card {
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+        .site-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            border-color: #0d6efd;
+        }
+        .breadcrumb-nav {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+        .location-item {
+            transition: all 0.2s;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .location-item:hover {
+            background-color: #f8f9fa;
+            border-color: #dee2e6;
+        }
+        .btn-group-location {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .location-item:hover .btn-group-location {
+            opacity: 1;
+        }
+        .location-level-0 { border-left: 4px solid #0d6efd; background: #f8f9ff; }
+        .location-level-1 { border-left: 4px solid #198754; background: #f8fff8; margin-left: 20px; }
+        .location-level-2 { border-left: 4px solid #fd7e14; background: #fffaf8; margin-left: 40px; }
+        
+        /* Inline editing styles */
+        .inline-edit-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .inline-edit-input {
+            border: 2px solid #0d6efd;
+            background: white;
+            font-weight: bold;
+        }
+        .edit-buttons {
+            display: flex;
+            gap: 4px;
+        }
+        
+        /* Archive warning styles */
+        .archive-warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        .cascade-info {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+        
+        /* Loading states */
+        .btn-loading {
+            position: relative;
+        }
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 16px;
+            height: 16px;
+            border: 2px solid transparent;
+            border-top: 2px solid currentColor;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        
+        /* Archived items styles */
+        .archived-item {
+            opacity: 0.7;
+            background: #f8f9fa;
+            border-left: 4px solid #6c757d;
+        }
+        .archived-badge {
+            background: #6c757d !important;
+        }
+        
+        /* Success/Error animations */
+        .success-flash {
+            animation: successFlash 0.6s ease-in-out;
+        }
+        .error-flash {
+            animation: errorFlash 0.6s ease-in-out;
+        }
+        @keyframes successFlash {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: #d1e7dd; }
+        }
+        @keyframes errorFlash {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: #f8d7da; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="dashboard.html">Verdegris IoT Platform V5</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link" href="device-types.html">Device Types</a>
+                <a class="nav-link" href="sites.html">Sites</a>
+                <a class="nav-link active" href="locations.html">Locations</a>
+                <a class="nav-link" href="devices.html">Device Locations</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Locations Manager <span class="badge bg-success">V5 Complete CRUA</span></h1>
+                        <p class="text-muted">Create, update, and archive floors, rooms, and zones within your sites</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" onclick="showArchivedLocations()" id="viewArchivedBtn">
+                            🗂️ View Archived
+                        </button>
+                        <a href="sites.html" class="btn btn-outline-secondary">← Back to Sites</a>
+                        <a href="devices.html" class="btn btn-info">Assign Devices →</a>
+                    </div>
+                </div>
+
+                <!-- API Status Alert -->
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <strong>✅ Full CRUA Support:</strong>
+                    <span class="badge bg-success me-1">CREATE</span>
+                    <span class="badge bg-primary me-1">UPDATE</span>
+                    <span class="badge bg-warning me-1">ARCHIVE</span>
+                    All location management operations are now available!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Breadcrumb -->
+        <div id="breadcrumb-nav" class="breadcrumb-nav d-none">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="#" onclick="showSiteSelection()">All Sites</a></li>
+                    <li class="breadcrumb-item active" id="current-site-name">Current Site</li>
+                </ol>
+            </nav>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading sites...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Data</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadSiteSelector()">Retry</button>
+        </div>
+
+        <!-- Site Selection Grid -->
+        <div id="site-selection" class="d-none">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h3>🏢 Choose a Site to Manage</h3>
+                    <p class="text-muted">Click on any site below to view and manage its location hierarchy</p>
+                </div>
+            </div>
+            <div class="row" id="sites-grid">
+                <!-- Site cards will be populated here -->
+            </div>
+        </div>
+
+        <!-- Location Management -->
+        <div id="hierarchy-content" class="d-none">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            Location Hierarchy: <span id="current-site-title">-</span>
+                        </h5>
+                        <button class="btn btn-primary btn-sm" onclick="showAddLocationForm('floor', currentSiteId, 'Floor')">
+                            🏢 Add Floor
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="hierarchy-tree">
+                        <!-- Hierarchy will be displayed here -->
+                    </div>
+                    <div id="no-locations" class="text-center py-4 d-none">
+                        <p class="text-muted">No locations found for this site.</p>
+                        <button class="btn btn-primary" onclick="showAddLocationForm('floor', currentSiteId, 'First Floor')">
+                            🏢 Add First Floor
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Archived Locations View -->
+        <div id="archived-content" class="d-none">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">🗂️ Archived Locations</h5>
+                        <button class="btn btn-secondary btn-sm" onclick="hideArchivedLocations()">
+                            ← Back to Active Locations
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="archived-list">
+                        <!-- Archived items will be displayed here -->
+                    </div>
+                    <div id="no-archived" class="text-center py-4 d-none">
+                        <p class="text-muted">No archived locations found.</p>
+                        <small class="text-muted">Archived locations will appear here when you delete floors, rooms, or zones.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Location Modal -->
+        <div class="modal fade" id="locationModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="locationModalTitle">Add Location</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form id="locationForm">
+                        <div class="modal-body">
+                            <input type="hidden" id="locationType">
+                            <input type="hidden" id="parentId">
+
+                            <div class="mb-3">
+                                <label for="locationName" class="form-label">Name *</label>
+                                <input type="text" class="form-control" id="locationName" required>
+                                <div class="form-text" id="locationNameHelp">Enter a descriptive name for this location</div>
+                            </div>
+
+                            <div class="mb-3" id="parentLocationDisplay">
+                                <label class="form-label">Parent Location</label>
+                                <div class="form-control-plaintext" id="parentLocationText">-</div>
+                            </div>
+
+                            <div class="alert alert-info">
+                                <small><strong>Note:</strong> Location names must be unique within their parent.</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary" id="saveLocationBtn">
+                                <span class="spinner-border spinner-border-sm d-none me-2"></span>
+                                Create Location
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Archive Confirmation Modal -->
+        <div class="modal fade" id="archiveModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning">
+                        <h5 class="modal-title">⚠️ Archive Location</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="archive-warning">
+                            <h6>Are you sure you want to archive this location?</h6>
+                            <p class="mb-2">You're about to archive: <strong id="archiveLocationName">-</strong></p>
+                            
+                            <div id="archiveCascadeInfo" class="cascade-info">
+                                <p class="mb-1"><strong>This action will:</strong></p>
+                                <ul class="mb-0" id="archiveCascadeList">
+                                    <!-- Cascade effects will be listed here -->
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info mt-3">
+                            <small><strong>Note:</strong> Archived locations are not deleted permanently. You can view them in the archived locations section.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-warning" id="confirmArchiveBtn">
+                            <span class="spinner-border spinner-border-sm d-none me-2"></span>
+                            Archive Location
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let currentHierarchy = null;
+        let currentSiteId = null;
+        let allSites = [];
+        let locationModal, archiveModal;
+        let archiveLocationId = null;
+        let archiveLocationType = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            locationModal = new bootstrap.Modal(document.getElementById('locationModal'));
+            archiveModal = new bootstrap.Modal(document.getElementById('archiveModal'));
+            loadSiteSelector();
+
+            // Check if site_id was passed as URL parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const siteId = urlParams.get('site_id');
+            if (siteId) {
+                loadSiteHierarchy(siteId);
+            }
+
+            setupFormHandlers();
+        });
+
+        function setupFormHandlers() {
+            document.getElementById('locationForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                await saveLocation();
+            });
+
+            document.getElementById('confirmArchiveBtn').addEventListener('click', async function() {
+                await confirmArchiveLocation();
+            });
+        }
+
+        async function loadSiteSelector() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const siteSelection = document.getElementById('site-selection');
+
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            siteSelection.classList.add('d-none');
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const sites = await api.get('/v1/sites');
+
+                allSites = sites.filter(site => !site.archived_at);
+                displaySiteGrid();
+
+                loading.classList.add('d-none');
+                siteSelection.classList.remove('d-none');
+
+            } catch (err) {
+                console.error('Error loading sites:', err);
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 'Failed to load sites: ' + err.message;
+            }
+        }
+
+        function displaySiteGrid() {
+            const grid = document.getElementById('sites-grid');
+
+            grid.innerHTML = allSites.map(site => `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card site-card h-100" onclick="selectSite(${site.id})">
+                        <div class="card-body">
+                            <h5 class="card-title">🏢 ${escapeHtml(site.name)}</h5>
+                            <p class="card-text text-muted">
+                                ${escapeHtml(site.address || 'No address specified')}
+                            </p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">Click to manage locations</small>
+                                <span class="badge bg-primary">→</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectSite(siteId) {
+            loadSiteHierarchy(siteId);
+        }
+
+        function showSiteSelection() {
+            document.getElementById('site-selection').classList.remove('d-none');
+            document.getElementById('hierarchy-content').classList.add('d-none');
+            document.getElementById('archived-content').classList.add('d-none');
+            document.getElementById('breadcrumb-nav').classList.add('d-none');
+            currentSiteId = null;
+        }
+
+        async function loadSiteHierarchy(siteId) {
+            if (!siteId) {
+                showSiteSelection();
+                return;
+            }
+
+            currentSiteId = parseInt(siteId);
+            const selectedSite = allSites.find(s => s.id == siteId);
+
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('hierarchy-content');
+            const siteSelection = document.getElementById('site-selection');
+            const breadcrumb = document.getElementById('breadcrumb-nav');
+            const archivedContent = document.getElementById('archived-content');
+
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            content.classList.add('d-none');
+            siteSelection.classList.add('d-none');
+            archivedContent.classList.add('d-none');
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const hierarchy = await api.get('/v1/locations/hierarchy');
+
+                const siteData = hierarchy.find(site => site.id == siteId);
+
+                if (siteData) {
+                    currentHierarchy = siteData;
+                } else {
+                    const siteName = selectedSite ? selectedSite.name : 'Unknown Site';
+                    currentHierarchy = { id: parseInt(siteId), name: siteName, floors: [] };
+                }
+
+                document.getElementById('current-site-title').textContent = currentHierarchy.name;
+                document.getElementById('current-site-name').textContent = currentHierarchy.name;
+                displayHierarchy(currentHierarchy);
+
+                loading.classList.add('d-none');
+                content.classList.remove('d-none');
+                breadcrumb.classList.remove('d-none');
+
+            } catch (err) {
+                console.error('Error loading hierarchy:', err);
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 'Failed to load location hierarchy: ' + err.message;
+            }
+        }
+
+        function displayHierarchy(siteData) {
+            const container = document.getElementById('hierarchy-tree');
+            const noLocations = document.getElementById('no-locations');
+
+            if (!siteData.floors || siteData.floors.length === 0) {
+                container.innerHTML = '';
+                noLocations.classList.remove('d-none');
+                return;
+            }
+
+            noLocations.classList.add('d-none');
+
+            let html = `<div class="location-hierarchy">`;
+
+            siteData.floors.forEach(floor => {
+                html += `
+                    <div class="location-item location-level-0 mb-3" id="floor-${floor.id}">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center flex-grow-1">
+                                <span class="me-2">🏢</span>
+                                <div class="inline-edit-container" id="floor-name-${floor.id}">
+                                    <strong class="location-name" onclick="startEdit('floor', ${floor.id}, '${escapeHtml(floor.name)}')">${escapeHtml(floor.name)}</strong>
+                                </div>
+                            </div>
+                            <div class="btn-group btn-group-sm btn-group-location">
+                                <button class="btn btn-outline-success" onclick="showAddLocationForm('room', ${floor.id}, 'Room')" title="Add Room">
+                                    🚪 Add Room
+                                </button>
+                                <button class="btn btn-outline-primary" onclick="startEdit('floor', ${floor.id}, '${escapeHtml(floor.name)}')" title="Edit Floor">
+                                    ✏️ Edit
+                                </button>
+                                <button class="btn btn-outline-danger" onclick="showArchiveConfirmation('floor', ${floor.id}, '${escapeHtml(floor.name)}')" title="Archive Floor">
+                                    🗑️ Archive
+                                </button>
+                            </div>
+                        </div>
+                `;
+
+                if (floor.rooms && floor.rooms.length > 0) {
+                    floor.rooms.forEach(room => {
+                        html += `
+                            <div class="location-item location-level-1 mb-2" id="room-${room.id}">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="d-flex align-items-center flex-grow-1">
+                                        <span class="me-2">🚪</span>
+                                        <div class="inline-edit-container" id="room-name-${room.id}">
+                                            <span class="location-name" onclick="startEdit('room', ${room.id}, '${escapeHtml(room.name)}')">${escapeHtml(room.name)}</span>
+                                        </div>
+                                    </div>
+                                    <div class="btn-group btn-group-sm btn-group-location">
+                                        <button class="btn btn-outline-warning" onclick="showAddLocationForm('zone', ${room.id}, 'Zone')" title="Add Zone">
+                                            📍 Add Zone
+                                        </button>
+                                        <button class="btn btn-outline-primary" onclick="startEdit('room', ${room.id}, '${escapeHtml(room.name)}')" title="Edit Room">
+                                            ✏️ Edit
+                                        </button>
+                                        <button class="btn btn-outline-danger" onclick="showArchiveConfirmation('room', ${room.id}, '${escapeHtml(room.name)}')" title="Archive Room">
+                                            🗑️ Archive
+                                        </button>
+                                    </div>
+                                </div>
+                        `;
+
+                        if (room.zones && room.zones.length > 0) {
+                            room.zones.forEach(zone => {
+                                html += `
+                                    <div class="location-item location-level-2 mb-1" id="zone-${zone.id}">
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <div class="d-flex align-items-center flex-grow-1">
+                                                <span class="me-2">📍</span>
+                                                <div class="inline-edit-container" id="zone-name-${zone.id}">
+                                                    <small class="location-name" onclick="startEdit('zone', ${zone.id}, '${escapeHtml(zone.name)}')">${escapeHtml(zone.name)}</small>
+                                                </div>
+                                            </div>
+                                            <div class="btn-group btn-group-sm btn-group-location">
+                                                <button class="btn btn-outline-primary" onclick="startEdit('zone', ${zone.id}, '${escapeHtml(zone.name)}')" title="Edit Zone">
+                                                    ✏️ Edit
+                                                </button>
+                                                <button class="btn btn-outline-danger" onclick="showArchiveConfirmation('zone', ${zone.id}, '${escapeHtml(zone.name)}')" title="Archive Zone">
+                                                    🗑️ Archive
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                        }
+
+                        html += `</div>`;
+                    });
+                }
+
+                html += `</div>`;
+            });
+
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        function startEdit(type, id, currentName) {
+            const container = document.getElementById(`${type}-name-${id}`);
+            
+            // Prevent multiple edits
+            if (container.querySelector('.inline-edit-input')) return;
+
+            const originalHtml = container.innerHTML;
+            
+            container.innerHTML = `
+                <input type="text" class="form-control form-control-sm inline-edit-input" value="${escapeHtml(currentName)}" id="edit-input-${type}-${id}">
+                <div class="edit-buttons">
+                    <button class="btn btn-success btn-sm" onclick="saveEdit('${type}', ${id})">✓</button>
+                    <button class="btn btn-secondary btn-sm" onclick="cancelEdit('${type}', ${id}, \`${originalHtml}\`)">✗</button>
+                </div>
+            `;
+
+            const input = document.getElementById(`edit-input-${type}-${id}`);
+            input.focus();
+            input.select();
+
+            // Handle Enter and Escape keys
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEdit(type, id);
+                } else if (e.key === 'Escape') {
+                    cancelEdit(type, id, originalHtml);
+                }
+            });
+        }
+
+        function cancelEdit(type, id, originalHtml) {
+            const container = document.getElementById(`${type}-name-${id}`);
+            container.innerHTML = originalHtml;
+        }
+
+        async function saveEdit(type, id) {
+            const input = document.getElementById(`edit-input-${type}-${id}`);
+            const newName = input.value.trim();
+            const container = document.getElementById(`${type}-name-${id}`);
+
+            if (!newName) {
+                showAlert('danger', 'Name cannot be empty');
+                input.focus();
+                return;
+            }
+
+            // Show loading state
+            input.disabled = true;
+            container.querySelector('.btn-success').classList.add('btn-loading');
+            container.querySelector('.btn-success').disabled = true;
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                
+                const response = await api.put(`/v1/locations/${type}s/${id}`, {
+                    name: newName
+                });
+
+                // Update the display
+                const elementClass = type === 'zone' ? 'small' : (type === 'floor' ? 'strong' : 'span');
+                const clickHandler = `onclick="startEdit('${type}', ${id}, '${escapeHtml(newName)}')"`;
+                container.innerHTML = `<${elementClass} class="location-name" ${clickHandler}>${escapeHtml(newName)}</${elementClass}>`;
+
+                // Flash success
+                const locationItem = document.getElementById(`${type}-${id}`);
+                locationItem.classList.add('success-flash');
+                setTimeout(() => locationItem.classList.remove('success-flash'), 600);
+
+                showAlert('success', `${type.charAt(0).toUpperCase() + type.slice(1)} renamed successfully!`);
+
+            } catch (err) {
+                console.error('Error updating location:', err);
+                
+                // Flash error
+                const locationItem = document.getElementById(`${type}-${id}`);
+                locationItem.classList.add('error-flash');
+                setTimeout(() => locationItem.classList.remove('error-flash'), 600);
+
+                let errorMessage = err.message;
+                if (errorMessage.includes('duplicate key value') || errorMessage.includes('already exists')) {
+                    errorMessage = `A ${type} with that name already exists. Please choose a different name.`;
+                }
+
+                showAlert('danger', `Failed to rename ${type}: ${errorMessage}`);
+                input.focus();
+                input.select();
+            } finally {
+                input.disabled = false;
+                container.querySelector('.btn-success').classList.remove('btn-loading');
+                container.querySelector('.btn-success').disabled = false;
+            }
+        }
+
+        function showArchiveConfirmation(type, id, name) {
+            archiveLocationId = id;
+            archiveLocationType = type;
+            
+            document.getElementById('archiveLocationName').textContent = name;
+            
+            // Build cascade information
+            const cascadeList = document.getElementById('archiveCascadeList');
+            let cascadeInfo = [];
+            
+            if (type === 'floor') {
+                cascadeInfo = [
+                    'Archive this floor permanently',
+                    'Archive all rooms within this floor',
+                    'Archive all zones within those rooms',
+                    'Unassign any devices from affected zones'
+                ];
+            } else if (type === 'room') {
+                cascadeInfo = [
+                    'Archive this room permanently',
+                    'Archive all zones within this room',
+                    'Unassign any devices from affected zones'
+                ];
+            } else if (type === 'zone') {
+                cascadeInfo = [
+                    'Archive this zone permanently',
+                    'Unassign any devices from this zone'
+                ];
+            }
+            
+            cascadeList.innerHTML = cascadeInfo.map(info => `<li>${info}</li>`).join('');
+            
+            archiveModal.show();
+        }
+
+        async function confirmArchiveLocation() {
+            const confirmBtn = document.getElementById('confirmArchiveBtn');
+            const spinner = confirmBtn.querySelector('.spinner-border');
+            
+            confirmBtn.disabled = true;
+            spinner.classList.remove('d-none');
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                
+                const response = await api.delete(`/v1/locations/${archiveLocationType}s/${archiveLocationId}`);
+                
+                archiveModal.hide();
+                
+                // Remove the item from display with animation
+                const locationItem = document.getElementById(`${archiveLocationType}-${archiveLocationId}`);
+                if (locationItem) {
+                    locationItem.style.transition = 'all 0.3s';
+                    locationItem.style.opacity = '0';
+                    locationItem.style.transform = 'translateX(-20px)';
+                    setTimeout(() => {
+                        locationItem.remove();
+                        
+                        // Check if we need to show "no locations" message
+                        const hierarchyTree = document.getElementById('hierarchy-tree');
+                        if (!hierarchyTree.innerHTML.trim() || hierarchyTree.children.length === 0) {
+                            document.getElementById('no-locations').classList.remove('d-none');
+                        }
+                    }, 300);
+                }
+
+                // Show success message with details
+                let successMessage = `${archiveLocationType.charAt(0).toUpperCase() + archiveLocationType.slice(1)} archived successfully!`;
+                
+                if (response.cascade_summary) {
+                    const summary = response.cascade_summary;
+                    const details = [];
+                    if (summary.rooms_archived) details.push(`${summary.rooms_archived} rooms`);
+                    if (summary.zones_archived) details.push(`${summary.zones_archived} zones`);
+                    if (summary.devices_unassigned) details.push(`${summary.devices_unassigned} devices unassigned`);
+                    
+                    if (details.length > 0) {
+                        successMessage += ` Also archived: ${details.join(', ')}.`;
+                    }
+                } else if (response.devices_unassigned) {
+                    successMessage += ` ${response.devices_unassigned} devices unassigned.`;
+                }
+
+                showAlert('success', successMessage);
+
+            } catch (err) {
+                console.error('Error archiving location:', err);
+                showAlert('danger', `Failed to archive ${archiveLocationType}: ${err.message}`);
+            } finally {
+                confirmBtn.disabled = false;
+                spinner.classList.add('d-none');
+            }
+        }
+
+        async function showArchivedLocations() {
+            const hierarchyContent = document.getElementById('hierarchy-content');
+            const archivedContent = document.getElementById('archived-content');
+            const viewArchivedBtn = document.getElementById('viewArchivedBtn');
+
+            hierarchyContent.classList.add('d-none');
+            archivedContent.classList.remove('d-none');
+            
+            // Update button
+            viewArchivedBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading...';
+            viewArchivedBtn.disabled = true;
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const response = await api.get('/v1/locations/archived');
+                
+                const archivedList = document.getElementById('archived-list');
+                const noArchived = document.getElementById('no-archived');
+
+                if (!response.archived_locations || response.archived_locations.length === 0) {
+                    archivedList.innerHTML = '';
+                    noArchived.classList.remove('d-none');
+                } else {
+                    noArchived.classList.add('d-none');
+                    
+                    const html = response.archived_locations.map(location => `
+                        <div class="location-item archived-item mb-2">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">${location.type === 'floor' ? '🏢' : location.type === 'room' ? '🚪' : '📍'}</span>
+                                    <div>
+                                        <strong>${escapeHtml(location.name)}</strong>
+                                        <span class="badge archived-badge ms-2">${location.type}</span>
+                                        <div class="small text-muted">
+                                            Parent: ${escapeHtml(location.parent_name || 'N/A')} • 
+                                            Archived: ${new Date(location.archived_at).toLocaleString()}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    archivedList.innerHTML = html;
+                }
+
+            } catch (err) {
+                console.error('Error loading archived locations:', err);
+                showAlert('danger', 'Failed to load archived locations: ' + err.message);
+            } finally {
+                viewArchivedBtn.innerHTML = '🗂️ View Archived';
+                viewArchivedBtn.disabled = false;
+            }
+        }
+
+        function hideArchivedLocations() {
+            document.getElementById('hierarchy-content').classList.remove('d-none');
+            document.getElementById('archived-content').classList.add('d-none');
+        }
+
+        function showAddLocationForm(type, parentId, typeName) {
+            const modal = document.getElementById('locationModal');
+            const title = document.getElementById('locationModalTitle');
+            const nameInput = document.getElementById('locationName');
+            const nameHelp = document.getElementById('locationNameHelp');
+            const parentText = document.getElementById('parentLocationText');
+
+            // Reset form
+            document.getElementById('locationForm').reset();
+            document.getElementById('locationType').value = type;
+            document.getElementById('parentId').value = parentId;
+
+            // Set modal content
+            const typeIcons = { floor: '🏢', room: '🚪', zone: '📍' };
+            title.textContent = `Add ${typeIcons[type]} ${typeName}`;
+            nameInput.placeholder = `Enter ${typeName.toLowerCase()} name`;
+            nameHelp.textContent = `Enter a descriptive name for this ${typeName.toLowerCase()}`;
+
+            // Set parent location text
+            if (type === 'floor') {
+                parentText.textContent = currentHierarchy.name;
+            } else {
+                const parentLocation = findLocationById(parentId);
+                parentText.textContent = parentLocation ? getLocationPath(parentLocation, type === 'zone' ? 'room' : 'floor') : 'Unknown';
+            }
+
+            locationModal.show();
+            setTimeout(() => nameInput.focus(), 300);
+        }
+
+        async function saveLocation() {
+            const saveBtn = document.getElementById('saveLocationBtn');
+            const spinner = saveBtn.querySelector('.spinner-border');
+            const form = document.getElementById('locationForm');
+
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const type = document.getElementById('locationType').value;
+            const name = document.getElementById('locationName').value.trim();
+            const parentId = document.getElementById('parentId').value;
+
+            saveBtn.disabled = true;
+            spinner.classList.remove('d-none');
+
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+
+                const data = { name };
+                if (type === 'floor') data.site_id = parseInt(parentId);
+                if (type === 'room') data.floor_id = parseInt(parentId);
+                if (type === 'zone') data.room_id = parseInt(parentId);
+
+                const result = await api.post(`/v1/locations/${type}`, data);
+
+                locationModal.hide();
+                await loadSiteHierarchy(currentSiteId);
+
+                showAlert('success', `${type.charAt(0).toUpperCase() + type.slice(1)} "${name}" created successfully!`);
+
+            } catch (err) {
+                console.error('Error saving location:', err);
+                let errorMessage = err.message;
+
+                // Handle specific database constraint errors
+                if (errorMessage.includes('duplicate key value')) {
+                    errorMessage = `A ${type} with that name already exists in this location. Please choose a different name.`;
+                }
+
+                showAlert('danger', `Failed to create ${type}: ${errorMessage}`);
+            } finally {
+                saveBtn.disabled = false;
+                spinner.classList.add('d-none');
+            }
+        }
+
+        function findLocationById(id) {
+            if (!currentHierarchy || !currentHierarchy.floors) return null;
+
+            for (const floor of currentHierarchy.floors) {
+                if (floor.id == id) return floor;
+
+                if (floor.rooms) {
+                    for (const room of floor.rooms) {
+                        if (room.id == id) return room;
+
+                        if (room.zones) {
+                            for (const zone of room.zones) {
+                                if (zone.id == id) return zone;
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function getLocationPath(location, type) {
+            if (type === 'floor') {
+                return `${currentHierarchy.name} > ${location.name}`;
+            } else if (type === 'room') {
+                const floor = currentHierarchy.floors.find(f =>
+                    f.rooms && f.rooms.some(r => r.id === location.id)
+                );
+                return floor ? `${currentHierarchy.name} > ${floor.name} > ${location.name}` : location.name;
+            }
+            return location.name;
+        }
+
+        function showAlert(type, message) {
+            const alertHtml = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+
+            const container = document.querySelector('.container');
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = alertHtml;
+
+            container.insertBefore(tempDiv.firstElementChild, container.firstElementChild);
+
+            // Auto-remove after 6 seconds
+            setTimeout(() => {
+                const alert = document.querySelector('.alert');
+                if (alert) {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }
+            }, 6000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text.toString();
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

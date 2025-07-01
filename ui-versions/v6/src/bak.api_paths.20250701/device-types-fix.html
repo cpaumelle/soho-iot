@@ -1,0 +1,8 @@
+# This will be the corrected JavaScript section - let me provide the key fixes:
+
+# 1. Fix the type checking logic:
+# Change: device.device_type !== null
+# To: device.device_type != null && device.device_type !== ""
+
+# 2. Fix the device type lookup:
+# The API returns device_type as the name, so we need to find by name, not ID

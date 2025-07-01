@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Device Twinning</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet"/>
+  <link href="styles.css" rel="stylesheet" />
+</head>
+<body>
+  <div class="container-fluid py-4">
+    <div class="row g-4">
+      <!-- Left Panel: Orphan Devices -->
+      <div class="col-lg-4">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+              <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+              Orphan Devices
+            </h5>
+            <span class="badge bg-warning text-dark" id="orphanCount">3</span>
+          </div>
+          <div class="card-body p-0">
+            <div class="text-muted p-3 pb-2">
+              <small>Devices waiting to be twinned</small>
+            </div>
+            <div class="list-group list-group-flush" id="orphanDevicesList">
+              <!-- Orphan devices will be populated here -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Twinning Form -->
+      <div class="col-lg-8">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">
+              <i class="bi bi-link-45deg text-primary me-2"></i>
+              Twin Device: <span id="selectedDeviceId" class="text-primary">Select a device</span>
+            </h5>
+          </div>
+          <div class="card-body">
+            <form id="twinForm">
+              <div class="mb-4">
+                <h6 class="step-header">
+                  <i class="bi bi-1-circle me-2 text-primary"></i>Step 1: Select Device Type
+                </h6>
+                <div class="mb-3">
+                  <div class="btn-group" role="group" aria-label="Device type selection">
+                    <button type="button" class="btn btn-outline-primary" data-category="environment">
+                      <i class="bi bi-thermometer-half me-1"></i>Environment
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" data-category="motion">
+                      <i class="bi bi-activity me-1"></i>Motion
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" data-category="energy">
+                      <i class="bi bi-lightning me-1"></i>Energy
+                    </button>
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Device Model</label>
+                  <select class="form-select" id="deviceModel" required>
+                    <option value="">Select a device type first</option>
+                  </select>
+                  <div id="modelDescription" class="form-text mt-2">
+                    Select a device category to see available models
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <h6 class="step-header">
+                  <i class="bi bi-2-circle me-2 text-primary"></i>Step 2: Assign Location
+                </h6>
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold">Site</label>
+                    <div class="input-group">
+                      <select class="form-select" id="siteSelect" required>
+                        <option value="">Select site...</option>
+                      </select>
+                      <a href="location-manager.html" class="btn btn-outline-secondary" title="Manage locations">
+                        <i class="bi bi-gear"></i>
+                      </a>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold">Floor</label>
+                    <div class="input-group">
+                      <select class="form-select" id="floorSelect" required>
+                        <option value="">Select floor...</option>
+                      </select>
+                      <a href="location-manager.html" class="btn btn-outline-secondary" title="Manage locations">
+                        <i class="bi bi-gear"></i>
+                      </a>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold">Room</label>
+                    <div class="input-group">
+                      <select class="form-select" id="roomSelect" required>
+                        <option value="">Select room...</option>
+                      </select>
+                      <a href="location-manager.html" class="btn btn-outline-secondary" title="Manage locations">
+                        <i class="bi bi-gear"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <h6 class="step-header">
+                  <i class="bi bi-3-circle me-2 text-primary"></i>Device Name
+                </h6>
+                <div class="mb-3">
+                  <input type="text" class="form-control" id="deviceName" placeholder="Enter device name" required />
+                </div>
+              </div>
+
+              <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Recent Payload Preview</label>
+                  <pre id="payloadPreview" class="p-3 rounded">{
+  "deveui": "sensor-003",
+  "timestamp": "2025-06-11T14:30:00Z",
+  "snr": 7.5,
+  "rssi": -85,
+  "data": "0A1B2C3D4E5F"
+}</pre>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Decoded Preview</label>
+                  <div class="bg-white p-3 rounded border" id="decodedPreview">
+                    <div class="d-flex justify-content-between">
+                      <span><i class="bi bi-thermometer text-danger"></i> Temperature:</span>
+                      <strong>23.4°C</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                      <span><i class="bi bi-droplet text-info"></i> Humidity:</span>
+                      <strong>67%</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                      <span><i class="bi bi-sun text-warning"></i> Light:</span>
+                      <strong>450 lux</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                      <span><i class="bi bi-battery-half text-success"></i> Battery:</span>
+                      <strong>85%</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-check mb-4">
+                <input class="form-check-input" type="checkbox" id="reprocessData" />
+                <label class="form-check-label" for="reprocessData">
+                  <i class="bi bi-arrow-clockwise me-1"></i>Reprocess historical data
+                </label>
+              </div>
+
+              <div class="d-flex justify-content-between align-items-center">
+                <button type="submit" class="btn btn-primary btn-lg" id="twinButton" disabled>
+                  <i class="bi bi-link-45deg me-2"></i>Twin Device
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="previewMoreBtn">
+                  <i class="bi bi-eye me-1"></i>Preview More Payloads
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts-api.js"></script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sites Manager - Verdegris IoT Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Verdegris IoT Platform</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="dashboard.html">Dashboard</a>
+                <a class="nav-link active" href="sites.html">Sites</a>
+                <a class="nav-link" href="locations.html">Locations</a>
+                <a class="nav-link" href="devices.html">Devices</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1>Sites Manager</h1>
+                        <p class="text-muted">Create, read, update, and archive facility sites</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="showAddSiteForm()">
+                        <i class="fas fa-plus"></i> Create New Site
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center my-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading sites...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="alert alert-danger d-none" role="alert">
+            <h4 class="alert-heading">Error Loading Sites</h4>
+            <p id="error-message"></p>
+            <button class="btn btn-outline-danger" onclick="loadSites()">Retry</button>
+        </div>
+
+        <!-- Add/Edit Site Form -->
+        <div id="site-form-container" class="card mb-4 d-none">
+            <div class="card-header">
+                <h5 class="card-title mb-0" id="form-title">Create New Site</h5>
+            </div>
+            <div class="card-body">
+                <form id="site-form">
+                    <input type="hidden" id="site-id">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="site-name" class="form-label">Site Name *</label>
+                                <input type="text" class="form-control" id="site-name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="site-address" class="form-label">Address</label>
+                                <input type="text" class="form-control" id="site-address">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="site-latitude" class="form-label">Latitude</label>
+                                <input type="number" step="any" class="form-control" id="site-latitude">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="site-longitude" class="form-label">Longitude</label>
+                                <input type="number" step="any" class="form-control" id="site-longitude">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="site-icon" class="form-label">Icon</label>
+                                <select class="form-control" id="site-icon">
+                                    <option value="">Select icon...</option>
+                                    <option value="building">Building</option>
+                                    <option value="factory">Factory</option>
+                                    <option value="warehouse">Warehouse</option>
+                                    <option value="office">Office</option>
+                                    <option value="retail">Retail</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" id="form-submit-btn">Create Site</button>
+                        <button type="button" class="btn btn-secondary" onclick="cancelForm()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Sites Table -->
+        <div id="sites-content" class="d-none">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Active Sites</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Address</th>
+                                    <th>Coordinates</th>
+                                    <th>Icon</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sites-table-body">
+                                <!-- Sites will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-sites" class="text-center py-4 d-none">
+                        <p class="text-muted">No sites found. Create your first site to get started.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        let currentSites = [];
+        let editingSiteId = null;
+
+        // Load sites on page load
+        document.addEventListener('DOMContentLoaded', loadSites);
+
+        async function loadSites() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('sites-content');
+            
+            // Show loading state
+            loading.classList.remove('d-none');
+            error.classList.add('d-none');
+            content.classList.add('d-none');
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                const sites = await api.get('/v1/sites');
+                
+                currentSites = sites;
+                displaySites(sites);
+                
+                // Show content, hide loading
+                loading.classList.add('d-none');
+                content.classList.remove('d-none');
+                
+            } catch (err) {
+                console.error('Error loading sites:', err);
+                
+                // Show error state
+                loading.classList.add('d-none');
+                error.classList.remove('d-none');
+                document.getElementById('error-message').textContent = 
+                    'Failed to load sites: ' + err.message;
+            }
+        }
+
+        function displaySites(sites) {
+            const tbody = document.getElementById('sites-table-body');
+            const noSites = document.getElementById('no-sites');
+            
+            if (!sites || sites.length === 0) {
+                tbody.innerHTML = '';
+                noSites.classList.remove('d-none');
+                return;
+            }
+            
+            noSites.classList.add('d-none');
+            
+            tbody.innerHTML = sites.map(site => {
+                const coordinates = site.latitude && site.longitude 
+                    ? site.latitude.toFixed(4) + ', ' + site.longitude.toFixed(4)
+                    : '-';
+                
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(site.name || '')}</strong></td>
+                        <td>${escapeHtml(site.address || '-')}</td>
+                        <td>${coordinates}</td>
+                        <td>${site.icon_name ? '<i class="fas fa-' + site.icon_name + '"></i> ' + site.icon_name : '-'}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="editSite(${site.id})" title="Update Site">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <a href="locations.html?site_id=${site.id}" class="btn btn-outline-info" title="Configure Locations">
+                                    <i class="fas fa-map"></i>
+                                </a>
+                                <button class="btn btn-outline-warning" onclick="archiveSite(${site.id})" title="Archive Site">
+                                    <i class="fas fa-archive"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function showAddSiteForm() {
+            editingSiteId = null;
+            document.getElementById('form-title').textContent = 'Create New Site';
+            document.getElementById('form-submit-btn').textContent = 'Create Site';
+            document.getElementById('site-form').reset();
+            document.getElementById('site-id').value = '';
+            document.getElementById('site-form-container').classList.remove('d-none');
+            document.getElementById('site-name').focus();
+        }
+
+        function editSite(siteId) {
+            const site = currentSites.find(s => s.id === siteId);
+            if (!site) return;
+            
+            editingSiteId = siteId;
+            document.getElementById('form-title').textContent = 'Update Site';
+            document.getElementById('form-submit-btn').textContent = 'Update Site';
+            document.getElementById('site-id').value = site.id;
+            document.getElementById('site-name').value = site.name || '';
+            document.getElementById('site-address').value = site.address || '';
+            document.getElementById('site-latitude').value = site.latitude || '';
+            document.getElementById('site-longitude').value = site.longitude || '';
+            document.getElementById('site-icon').value = site.icon_name || '';
+            
+            document.getElementById('site-form-container').classList.remove('d-none');
+            document.getElementById('site-name').focus();
+        }
+
+        function cancelForm() {
+            document.getElementById('site-form-container').classList.add('d-none');
+            document.getElementById('site-form').reset();
+            editingSiteId = null;
+        }
+
+        async function archiveSite(siteId) {
+            const site = currentSites.find(s => s.id === siteId);
+            if (!site) return;
+            
+            if (!confirm('Archive site "' + site.name + '"? This will preserve all historical data but mark the site as inactive.')) {
+                return;
+            }
+            
+            try {
+                const api = new APIClient('https://api.sensemy.cloud');
+                await api.put('/v1/sites/' + siteId, {
+                    ...site,
+                    archived_at: new Date().toISOString()
+                });
+                
+                // Reload sites to reflect changes
+                await loadSites();
+                
+            } catch (err) {
+                alert('Failed to archive site: ' + err.message);
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('site-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('form-submit-btn');
+            const originalText = submitBtn.textContent;
+            
+            try {
+                submitBtn.disabled = true;
+                submitBtn.textContent = editingSiteId ? 'Updating...' : 'Creating...';
+                
+                const formData = {
+                    name: document.getElementById('site-name').value.trim(),
+                    address: document.getElementById('site-address').value.trim() || null,
+                    latitude: parseFloat(document.getElementById('site-latitude').value) || null,
+                    longitude: parseFloat(document.getElementById('site-longitude').value) || null,
+                    icon_name: document.getElementById('site-icon').value || null
+                };
+                
+                const api = new APIClient('https://api.sensemy.cloud');
+                
+                if (editingSiteId) {
+                    // Update existing site
+                    await api.put('/v1/sites/' + editingSiteId, formData);
+                } else {
+                    // Create new site using POST to /v1/locations/site
+                    await api.post('/v1/locations/site', formData);
+                }
+                
+                // Reload sites and hide form
+                await loadSites();
+                cancelForm();
+                
+            } catch (err) {
+                alert('Failed to save site: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        });
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

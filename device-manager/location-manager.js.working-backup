@@ -1,0 +1,218 @@
+class LocationManager {
+    constructor() {
+        this.apiBase = 'https://devices.verdegris.eu/api';
+        this.locations = [];
+        this.init();
+    }
+
+    async init() {
+        await this.loadLocations();
+        this.renderLocations();
+        this.setupEventListeners();
+    }
+
+    async loadLocations() {
+        try {
+            const response = await fetch(`${this.apiBase}/locations`);
+            this.locations = await response.json();
+            console.log('Loaded locations:', this.locations);
+        } catch (error) {
+            console.error('Error loading locations:', error);
+            this.locations = [];
+        }
+    }
+
+    renderLocations() {
+        const container = document.getElementById('locationsList');
+        if (!container) return;
+
+        if (this.locations.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-12 text-gray-500">
+                    <i class="bi bi-building text-4xl mb-4 block"></i>
+                    <div class="text-lg">No locations found</div>
+                    <div class="text-sm mt-2">Click "Add Location" to get started</div>
+                </div>
+            `;
+            return;
+        }
+
+        // Create a beautiful hierarchical view
+        container.innerHTML = this.locations.map(location => `
+            <div class="location-item site-item">
+                <i class="bi bi-building location-icon"></i>
+                <div class="location-content">
+                    <div class="location-name">${location.name}</div>
+                    <div class="location-description">${location.description || 'Site location'}</div>
+                </div>
+                <div class="location-actions">
+                    <button onclick="window.locationManager.addFloor(${location.id})" class="action-btn add-btn">
+                        <i class="bi bi-plus"></i> Add Floor
+                    </button>
+                    <button onclick="window.locationManager.editLocation(${location.id})" class="action-btn">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button onclick="window.locationManager.deleteLocation(${location.id})" class="action-btn delete-btn">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Sample floors for demo -->
+            <div class="location-item floor-item">
+                <i class="bi bi-layers location-icon"></i>
+                <div class="location-content">
+                    <div class="location-name">Ground Floor</div>
+                    <div class="location-description">Main level</div>
+                </div>
+                <div class="location-actions">
+                    <button class="action-btn add-btn">
+                        <i class="bi bi-plus"></i> Add Room
+                    </button>
+                    <button class="action-btn">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="action-btn delete-btn">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Sample rooms for demo -->
+            <div class="location-item room-item">
+                <i class="bi bi-door-open location-icon"></i>
+                <div class="location-content">
+                    <div class="location-name">Conference Room A</div>
+                    <div class="location-description">Main conference room</div>
+                </div>
+                <div class="location-actions">
+                    <button class="action-btn">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="action-btn delete-btn">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="location-item room-item">
+                <i class="bi bi-pc-display location-icon"></i>
+                <div class="location-content">
+                    <div class="location-name">IT Room</div>
+                    <div class="location-description">Server and networking equipment</div>
+                </div>
+                <div class="location-actions">
+                    <button class="action-btn">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="action-btn delete-btn">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    setupEventListeners() {
+        document.getElementById('addLocationBtn')?.addEventListener('click', () => this.showAddModal());
+        document.getElementById('cancelBtn')?.addEventListener('click', () => this.hideAddModal());
+        document.getElementById('addLocationForm')?.addEventListener('submit', (e) => this.addLocation(e));
+    }
+
+    showAddModal() {
+        document.getElementById('addLocationModal')?.classList.remove('hidden');
+    }
+
+    hideAddModal() {
+        document.getElementById('addLocationModal')?.classList.add('hidden');
+        document.getElementById('addLocationForm')?.reset();
+    }
+
+    async addLocation(e) {
+        e.preventDefault();
+        
+        const name = document.getElementById('locationName')?.value;
+        const description = document.getElementById('locationDescription')?.value;
+
+        try {
+            const response = await fetch(`${this.apiBase}/locations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description })
+            });
+
+            if (response.ok) {
+                this.hideAddModal();
+                await this.loadLocations();
+                this.renderLocations();
+                this.showSuccessMessage('Location added successfully!');
+            } else {
+                this.showErrorMessage('Failed to add location');
+            }
+        } catch (error) {
+            console.error('Error adding location:', error);
+            this.showErrorMessage('Error adding location');
+        }
+    }
+
+    async deleteLocation(id) {
+        if (!confirm('Are you sure you want to delete this location and all its floors/rooms?')) return;
+
+        try {
+            const response = await fetch(`${this.apiBase}/locations/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                await this.loadLocations();
+                this.renderLocations();
+                this.showSuccessMessage('Location deleted successfully!');
+            } else {
+                this.showErrorMessage('Failed to delete location');
+            }
+        } catch (error) {
+            console.error('Error deleting location:', error);
+            this.showErrorMessage('Error deleting location');
+        }
+    }
+
+    addFloor(siteId) {
+        // Placeholder for adding floors - would integrate with a floors table
+        this.showInfoMessage('Floor management coming soon!');
+    }
+
+    editLocation(id) {
+        // Placeholder for editing locations
+        this.showInfoMessage('Edit functionality coming soon!');
+    }
+
+    showSuccessMessage(message) {
+        // Simple toast-like notification
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        toast.innerHTML = `<i class="bi bi-check-circle mr-2"></i>${message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    showErrorMessage(message) {
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        toast.innerHTML = `<i class="bi bi-exclamation-circle mr-2"></i>${message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    showInfoMessage(message) {
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-blue-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        toast.innerHTML = `<i class="bi bi-info-circle mr-2"></i>${message}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.locationManager = new LocationManager();
+});

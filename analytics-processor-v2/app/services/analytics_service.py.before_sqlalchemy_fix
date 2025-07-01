@@ -1,0 +1,423 @@
+"""
+Analytics Service - Core business logic for processing uplinks
+FIXED: Database parameter passing and timestamp handling
+"""
+
+import logging
+import json
+import uuid
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
+
+from app.models.requests import (
+    UplinkAnalyticsRequest,
+    AnalyticsResult,
+    StatisticsData
+)
+
+logger = logging.getLogger("analytics.service")
+
+class AnalyticsService:
+    """Core analytics processing service"""
+
+    def __init__(self, analytics_db, ingest_db):
+        self.analytics_db = analytics_db
+        self.ingest_db = ingest_db
+        self.decoders = {}
+        self.processing_stats = {
+            "total_processed": 0,
+            "successful": 0,
+            "failed": 0,
+            "start_time": datetime.utcnow()
+        }
+
+    async def initialize(self):
+        """Initialize the analytics service"""
+        logger.info("🔧 Initializing Analytics Service")
+
+        try:
+            # Connect to databases
+            await self.analytics_db.connect()
+            await self.ingest_db.connect()
+
+            # Create analytics tables if needed
+            await self.ensure_analytics_tables()
+
+            # Load decoder configurations
+            await self.load_decoder_configurations()
+
+            logger.info("✅ Analytics Service initialized successfully")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Analytics Service: {e}")
+            raise
+
+    async def ensure_analytics_tables(self):
+        """Ensure analytics tables exist"""
+        try:
+            # Create uplinks table for analytics data if it doesn't exist
+            create_uplinks_query = """
+                CREATE TABLE IF NOT EXISTS uplinks (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    device_id TEXT NOT NULL,
+                    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+                    raw_payload JSONB NOT NULL,
+                    decoded_fields JSONB,
+                    normalized_fields JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """
+
+            await self.analytics_db.execute(create_uplinks_query)
+
+            # Create indexes separately
+            index_queries = [
+                "CREATE INDEX IF NOT EXISTS idx_uplinks_device_id ON uplinks(device_id)",
+                "CREATE INDEX IF NOT EXISTS idx_uplinks_timestamp ON uplinks(timestamp)"
+            ]
+
+            for query in index_queries:
+                await self.analytics_db.execute(query)
+
+            # Create processing log table
+            create_log_query = """
+                CREATE TABLE IF NOT EXISTS analytics_processing_log (
+                    id UUID PRIMARY KEY,
+                    raw_uplink_id TEXT,
+                    processing_stage TEXT,
+                    processing_timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    source_data JSONB,
+                    processing_metadata JSONB,
+                    error_details JSONB,
+                    retry_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """
+
+            await self.analytics_db.execute(create_log_query)
+
+            logger.info("✅ Analytics tables ensured")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to ensure analytics tables: {e}")
+
+    async def cleanup(self):
+        """Clean up resources"""
+        logger.info("🔄 Cleaning up Analytics Service")
+
+        try:
+            if self.analytics_db:
+                await self.analytics_db.disconnect()
+            if self.ingest_db:
+                await self.ingest_db.disconnect()
+
+            logger.info("✅ Analytics Service cleanup complete")
+
+        except Exception as e:
+            logger.error(f"❌ Analytics Service cleanup failed: {e}")
+
+    async def load_decoder_configurations(self):
+        """Load active decoder configurations"""
+        try:
+            # Check if decoder_configurations table exists
+            check_table_query = """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'decoder_configurations'
+                )
+            """
+
+            table_exists = await self.analytics_db.fetch_val(check_table_query)
+
+            if not table_exists:
+                logger.info("📋 No decoder_configurations table found, skipping decoder loading")
+                return
+
+            query = """
+                SELECT
+                    device_type_id,
+                    decoder_name,
+                    decoder_version,
+                    decoder_config,
+                    normalization_rules
+                FROM decoder_configurations
+                WHERE is_active = true
+            """
+
+            configs = await self.analytics_db.fetch_all(query)
+
+            for config in configs:
+                device_type_id = config['device_type_id']
+                self.decoders[device_type_id] = {
+                    'name': config['decoder_name'],
+                    'version': config['decoder_version'],
+                    'config': config['decoder_config'],
+                    'normalization_rules': config['normalization_rules']
+                }
+
+            logger.info(f"📋 Loaded {len(self.decoders)} decoder configurations")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load decoder configurations: {e}")
+            # Continue without decoders - use default processing
+
+    def _fix_timestamp(self, timestamp_str: str) -> datetime:
+        """Fix timestamp string and convert to datetime - ENHANCED"""
+        try:
+            # Handle various timestamp issues
+            original = timestamp_str
+            
+            # Remove duplicate timezone info if present
+            if timestamp_str.count('+00:00') > 1:
+                timestamp_str = timestamp_str.replace('+00:00+00:00', '+00:00')
+                logger.debug(f"Fixed duplicate timezone: {original} -> {timestamp_str}")
+            
+            # Handle Z suffix
+            if timestamp_str.endswith('Z'):
+                timestamp_str = timestamp_str.replace('Z', '+00:00')
+                logger.debug(f"Fixed Z suffix: {original} -> {timestamp_str}")
+            
+            # Parse timestamp
+            return datetime.fromisoformat(timestamp_str)
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to parse timestamp '{timestamp_str}': {e}, using current time")
+            return datetime.utcnow().replace(tzinfo=None)
+
+    async def process_uplink(self, request: UplinkAnalyticsRequest) -> AnalyticsResult:
+        """Process a single uplink for analytics"""
+        processing_log_id = str(uuid.uuid4())
+
+        try:
+            # Start processing log for audit trail
+            await self.start_processing_log(processing_log_id, request)
+
+            # Decode the payload
+            decoded_data = await self.decode_payload(request)
+            await self.update_processing_stage(processing_log_id, "DECODED", {"decoded_fields": decoded_data})
+
+            # Normalize the data
+            normalized_data = await self.normalize_data(request, decoded_data)
+            await self.update_processing_stage(processing_log_id, "NORMALIZED", {"normalized_fields": normalized_data})
+
+            # Store analytics data
+            analytics_id = await self.store_analytics_data(request, decoded_data, normalized_data)
+            await self.update_processing_stage(processing_log_id, "STORED", {"analytics_id": analytics_id})
+
+            # Update processing statistics
+            self.processing_stats["total_processed"] += 1
+            self.processing_stats["successful"] += 1
+
+            logger.info(f"✅ Analytics processed successfully for {request.device.deveui}")
+
+            return AnalyticsResult(
+                device_id=request.device.deveui,
+                decoded_data=decoded_data,
+                normalized_data=normalized_data,
+                analytics_id=analytics_id,
+                processing_stage="COMPLETED"
+            )
+
+        except Exception as e:
+            self.processing_stats["total_processed"] += 1
+            self.processing_stats["failed"] += 1
+
+            await self.log_processing_error(processing_log_id, request, str(e))
+
+            logger.error(f"❌ Analytics processing failed for {request.device.deveui}: {e}")
+            raise
+
+    async def decode_payload(self, request: UplinkAnalyticsRequest) -> Dict[str, Any]:
+        """Decode the uplink payload based on device type"""
+        try:
+            device_type_id = request.device.device_type_id
+            payload = request.uplink.payload_json
+
+            # Get decoder for this device type
+            decoder = self.decoders.get(device_type_id)
+
+            if decoder:
+                # Use configured decoder
+                decoded = await self.apply_decoder(payload, decoder)
+                logger.debug(f"Decoded payload using {decoder['name']} for device type {device_type_id}")
+            else:
+                # Use default decoding (pass through)
+                decoded = payload.copy()
+                logger.debug(f"No decoder configured for device type {device_type_id}, using passthrough")
+
+            return decoded
+
+        except Exception as e:
+            logger.error(f"Payload decoding failed: {e}")
+            # Return original payload on decode failure
+            return request.uplink.payload_json.copy()
+
+    async def apply_decoder(self, payload: Dict[str, Any], decoder: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply decoder configuration to payload"""
+        try:
+            decoder_config = decoder['config']
+            decoder_name = decoder['name']
+
+            if decoder_name == "passthrough":
+                return payload.copy()
+
+            elif decoder_name == "temperature_humidity":
+                # Example decoder for temperature/humidity sensors
+                return {
+                    "temperature": payload.get("temp", payload.get("temperature", 0)),
+                    "humidity": payload.get("hum", payload.get("humidity", 0)),
+                    "battery": payload.get("bat", payload.get("battery", 100))
+                }
+
+            else:
+                logger.warning(f"Unknown decoder: {decoder_name}")
+                return payload.copy()
+
+        except Exception as e:
+            logger.error(f"Decoder application failed: {e}")
+            return payload.copy()
+
+    async def normalize_data(self, request: UplinkAnalyticsRequest, decoded_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize decoded data based on device type rules"""
+        try:
+            # For now, just return decoded data
+            # Add normalization rules later
+            return decoded_data.copy()
+
+        except Exception as e:
+            logger.error(f"Data normalization failed: {e}")
+            return decoded_data.copy()
+
+    async def store_analytics_data(self, request: UplinkAnalyticsRequest, decoded_data: Dict[str, Any], normalized_data: Dict[str, Any]) -> str:
+        """Store processed analytics data - FIXED parameter passing"""
+        try:
+            analytics_id = str(uuid.uuid4())
+
+            # Fix timestamp properly
+            timestamp = self._fix_timestamp(request.uplink.timestamp)
+
+            # Store in analytics uplinks table - FIXED: use values= parameter
+            query = """
+                INSERT INTO uplinks (
+                    id, device_id, timestamp, raw_payload, decoded_fields, normalized_fields
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+            """
+
+            await self.analytics_db.execute(
+                query,
+                values=(
+                    analytics_id,
+                    request.device.deveui,
+                    timestamp,
+                    json.dumps(request.uplink.payload_json),
+                    json.dumps(decoded_data),
+                    json.dumps(normalized_data)
+                )
+            )
+
+            return analytics_id
+
+        except Exception as e:
+            logger.error(f"Failed to store analytics data: {e}")
+            raise
+
+    async def start_processing_log(self, processing_log_id: str, request: UplinkAnalyticsRequest):
+        """Start processing log entry - FIXED parameter passing"""
+        try:
+            query = """
+                INSERT INTO analytics_processing_log (
+                    id, raw_uplink_id, processing_stage, source_data
+                ) VALUES ($1, $2, $3, $4)
+            """
+
+            await self.analytics_db.execute(
+                query,
+                values=(
+                    processing_log_id,
+                    request.uplink.id,
+                    'STARTED',
+                    json.dumps(request.dict())
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to start processing log: {e}")
+
+    async def update_processing_stage(self, processing_log_id: str, stage: str, metadata: Dict[str, Any] = None):
+        """Update processing stage in log - FIXED parameter passing"""
+        try:
+            query = """
+                UPDATE analytics_processing_log
+                SET processing_stage = $1,
+                    processing_timestamp = NOW(),
+                    processing_metadata = $2
+                WHERE id = $3
+            """
+
+            await self.analytics_db.execute(
+                query,
+                values=(
+                    stage,
+                    json.dumps(metadata) if metadata else None,
+                    processing_log_id
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to update processing stage: {e}")
+
+    async def log_processing_error(self, processing_log_id: str, request: UplinkAnalyticsRequest, error_message: str):
+        """Log processing error - FIXED parameter passing"""
+        try:
+            error_details = {
+                "error_message": error_message,
+                "device_eui": request.device.deveui,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+            query = """
+                UPDATE analytics_processing_log
+                SET processing_stage = 'FAILED',
+                    error_details = $1,
+                    processing_timestamp = NOW()
+                WHERE id = $2
+            """
+
+            await self.analytics_db.execute(
+                query,
+                values=(
+                    json.dumps(error_details),
+                    processing_log_id
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to log processing error: {e}")
+
+    async def health_check(self) -> Dict[str, Any]:
+        """Basic health check"""
+        try:
+            # Test database connections
+            await self.analytics_db.fetch_one("SELECT 1")
+            await self.ingest_db.fetch_one("SELECT 1")
+
+            return {
+                "analytics_db": "connected",
+                "ingest_db": "connected",
+                "decoders_loaded": len(self.decoders),
+                "uptime_seconds": (datetime.utcnow() - self.processing_stats["start_time"]).total_seconds()
+            }
+
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return {
+                "status": "unhealthy",
+                "error": str(e)
+            }
+
+    async def detailed_health_check(self) -> Dict[str, Any]:
+        """Detailed health check with more metrics"""
+        basic_health = await self.health_check()
+        basic_health.update(self.processing_stats)
+        return basic_health

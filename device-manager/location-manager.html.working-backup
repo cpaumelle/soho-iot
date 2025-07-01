@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+    <style>
+        .location-tree {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .location-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            margin: 4px 0;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            border-left: 4px solid transparent;
+        }
+        .location-item:hover {
+            background-color: #f8fafc;
+            border-left-color: #3b82f6;
+        }
+        .site-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            border-left-color: #4c51bf;
+        }
+        .floor-item {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            margin-left: 24px;
+            font-weight: 500;
+        }
+        .room-item {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            margin-left: 48px;
+        }
+        .location-icon {
+            font-size: 20px;
+            margin-right: 12px;
+            min-width: 24px;
+        }
+        .location-content {
+            flex: 1;
+        }
+        .location-name {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .location-description {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 2px;
+        }
+        .location-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .action-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        .action-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-1px);
+        }
+        .add-btn {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.3);
+        }
+        .delete-btn {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <div class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="device_twinning_improved.html" class="text-blue-600 hover:text-blue-800 flex items-center">
+                        <i class="bi bi-arrow-left me-2"></i>Back to Device Twinning
+                    </a>
+                    <div class="flex items-center">
+                        <i class="bi bi-geo-alt text-blue-600 text-xl mr-2"></i>
+                        <h1 class="text-2xl font-bold text-gray-900">Location Manager</h1>
+                    </div>
+                </div>
+                <button id="addLocationBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center">
+                    <i class="bi bi-plus-circle mr-2"></i>Add Location
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="max-w-6xl mx-auto p-6">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex items-center mb-6">
+                    <i class="bi bi-building text-gray-600 text-xl mr-3"></i>
+                    <h2 class="text-xl font-semibold text-gray-900">Location Hierarchy</h2>
+                </div>
+                
+                <div id="locationsList" class="location-tree">
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="bi bi-hourglass-split text-4xl mb-4 block"></i>
+                        <div class="text-lg">Loading locations...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Location Modal -->
+    <div id="addLocationModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-96 mx-4">
+            <div class="flex items-center mb-4">
+                <i class="bi bi-plus-circle text-blue-600 text-xl mr-2"></i>
+                <h3 class="text-lg font-semibold">Add New Location</h3>
+            </div>
+            <form id="addLocationForm">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="bi bi-tag mr-1"></i>Name
+                    </label>
+                    <input type="text" id="locationName" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="bi bi-card-text mr-1"></i>Description
+                    </label>
+                    <textarea id="locationDescription" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="3"></textarea>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" id="cancelBtn" class="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center">
+                        <i class="bi bi-check-circle mr-1"></i>Add Location
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="location-manager.js"></script>
+</body>
+</html>

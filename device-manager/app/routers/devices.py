@@ -1,0 +1,667 @@
+from fastapi import APIRouter, HTTPException, Query
+from typing import List, Optional
+import psycopg2
+import os
+import json
+from datetime import datetime
+
+router = APIRouter()
+
+# Database connection (same as main.py)
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.getenv('DEVICE_DB_HOST', 'device-database'),
+        database=os.getenv('DEVICE_DB_NAME', 'device_db'),
+        user=os.getenv('DEVICE_DB_USER', 'iot'),
+        password=os.getenv('DEVICE_DB_PASSWORD', 'secret')
+    )
+
+@router.get("/devices")
+def get_devices(
+    status: Optional[str] = Query(None, description="Filter by status: NEEDS_SETUP, NEEDS_TYPE, NEEDS_LOCATION, CONFIGURED, DECOMMISSIONED"),
+    limit: int = Query(100, description="Maximum number of devices to return"),
+    offset: int = Query(0, description="Number of devices to skip")
+):
+    """Get all devices with computed status and optional filtering"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Updated query to use our computed status view
+                base_query = """
+                    SELECT d.deveui, d.name, d.computed_status as status, dt.name as device_type_name,
+                           z.name as zone_name, r.name as room_name, f.name as floor_name, s.name as site_name
+                    FROM devices.device_registry_with_status d
+                    LEFT JOIN devices.device_types dt ON d.device_type_id = dt.id
+                    LEFT JOIN devices.zones z ON d.zone_id = z.id
+                    LEFT JOIN devices.rooms r ON z.room_id = r.id
+                    LEFT JOIN devices.floors f ON r.floor_id = f.id
+                    LEFT JOIN devices.sites s ON f.site_id = s.id
+                """
+
+                if status:
+                    query = base_query + " WHERE d.computed_status = %s ORDER BY d.deveui LIMIT %s OFFSET %s"
+                    cur.execute(query, (status, limit, offset))
+                else:
+                    query = base_query + " ORDER BY d.deveui LIMIT %s OFFSET %s"
+                    cur.execute(query, (limit, offset))
+
+                rows = cur.fetchall()
+
+                return [
+                    {
+                        "deveui": row[0],
+                        "name": row[1],
+                        "status": row[2],  # Now using computed_status
+                        "device_type": row[3],
+                        "location": {
+                            "zone": row[4],
+                            "room": row[5],
+                            "floor": row[6],
+                            "site": row[7]
+                        }
+                    }
+                    for row in rows
+                ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/devices/{deveui}")
+def get_device(deveui: str):
+    """Get single device by DevEUI with computed status"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT d.deveui, d.name, d.computed_status as status, d.device_type_id, d.zone_id,
+                           dt.name as device_type_name, dt.device_family,
+                           z.name as zone_name, r.name as room_name, f.name as floor_name, s.name as site_name
+                    FROM devices.device_registry_with_status d
+                    LEFT JOIN devices.device_types dt ON d.device_type_id = dt.id
+                    LEFT JOIN devices.zones z ON d.zone_id = z.id
+                    LEFT JOIN devices.rooms r ON z.room_id = r.id
+                    LEFT JOIN devices.floors f ON r.floor_id = f.id
+                    LEFT JOIN devices.sites s ON f.site_id = s.id
+                    WHERE d.deveui = %s
+                """, (deveui,))
+
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Device not found")
+
+                return {
+                    "deveui": row[0],
+                    "name": row[1],
+                    "status": row[2],  # Now using computed_status
+                    "device_type_id": row[3],
+                    "zone_id": row[4],
+                    "device_type": {
+                        "name": row[5],
+                        "family": row[6]
+                    },
+                    "location": {
+                        "zone": row[7],
+                        "room": row[8],
+                        "floor": row[9],
+                        "site": row[10]
+                    }
+                }
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/summary")
+def get_summary():
+    """Get device summary statistics with computed status"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Get device counts by computed status
+                cur.execute("""
+                    SELECT computed_status, COUNT(*)
+                    FROM devices.device_registry_with_status
+                    GROUP BY computed_status
+                """)
+                status_counts = dict(cur.fetchall())
+
+                # Get total devices
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM devices.device_registry_with_status
+                """)
+                total_devices = cur.fetchone()[0]
+
+                # Get sites count
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM devices.sites
+                    WHERE archived_at IS NULL
+                """)
+                total_sites = cur.fetchone()[0]
+
+                # Get recent uplinks count
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM devices.uplinks
+                    WHERE received_at > NOW() - INTERVAL '24 hours'
+                """)
+                uplinks_24h = cur.fetchone()[0]
+
+                return {
+                    "device_counts": status_counts,
+                    "total_devices": total_devices,
+                    "total_sites": total_sites,
+                    "uplinks_24h": uplinks_24h,
+                    "configured_devices": status_counts.get("CONFIGURED", 0),
+                    "orphan_devices": (
+                        status_counts.get("NEEDS_SETUP", 0) + 
+                        status_counts.get("NEEDS_TYPE", 0) + 
+                        status_counts.get("NEEDS_LOCATION", 0)
+                    )
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/devices")
+def create_or_update_device(device_data: dict):
+    """Create or update a device"""
+    try:
+        deveui = device_data.get("deveui")
+        if not deveui:
+            raise HTTPException(status_code=400, detail="DevEUI is required")
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Upsert device
+                cur.execute("""
+                    INSERT INTO devices.device_registry (deveui, name, device_type_id, zone_id, status)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (deveui) 
+                    DO UPDATE SET 
+                        name = EXCLUDED.name,
+                        device_type_id = EXCLUDED.device_type_id,
+                        zone_id = EXCLUDED.zone_id,
+                        status = EXCLUDED.status
+                    RETURNING deveui, name, status
+                """, (
+                    deveui,
+                    device_data.get("name"),
+                    device_data.get("device_type_id"),
+                    device_data.get("zone_id"),
+                    device_data.get("status", "ORPHAN")
+                ))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    "deveui": result[0],
+                    "name": result[1],
+                    "status": result[2],
+                    "message": "Device created/updated successfully"
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/device-types")
+def get_device_types():
+    """Get all device types"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, name, device_family, icon_name, 
+                           unpacker_module_name, unpacker_function_name, unpacker_version
+                    FROM devices.device_types
+                    ORDER BY name
+                """)
+                
+                rows = cur.fetchall()
+                
+                return [
+                    {
+                        "id": row[0],
+                        "name": row[1],
+                        "device_family": row[2],
+                        "icon_name": row[3],
+                        "unpacker_module_name": row[4],
+                        "unpacker_function_name": row[5],
+                        "unpacker_version": row[6]
+                    }
+                    for row in rows
+                ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/devices/{deveui}/uplinks")
+def get_device_uplinks(deveui: str, limit: int = Query(50, description="Number of uplinks to return")):
+    """Get recent uplinks for a device"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, received_at, payload
+                    FROM devices.uplinks
+                    WHERE deveui = %s
+                    ORDER BY received_at DESC
+                    LIMIT %s
+                """, (deveui, limit))
+                
+                rows = cur.fetchall()
+                
+                return [
+                    {
+                        "id": row[0],
+                        "received_at": row[1].isoformat(),
+                        "payload": row[2]
+                    }
+                    for row in rows
+                ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/summary")
+def get_summary():
+    """Get device summary statistics"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Get device counts by status
+                cur.execute("""
+                    SELECT status, COUNT(*) 
+                    FROM devices.device_registry 
+                    GROUP BY status
+                """)
+                status_counts = dict(cur.fetchall())
+                
+                # Get recent uplinks count
+                cur.execute("""
+                    SELECT COUNT(*) 
+                    FROM devices.uplinks 
+                    WHERE received_at > NOW() - INTERVAL '24 hours'
+                """)
+                uplinks_24h = cur.fetchone()[0]
+                
+                # Get last uplink
+                cur.execute("""
+                    SELECT deveui, received_at 
+                    FROM devices.uplinks 
+                    ORDER BY received_at DESC 
+                    LIMIT 1
+                """)
+                last_uplink = cur.fetchone()
+                
+                return {
+                    "device_counts": status_counts,
+                    "total_devices": sum(status_counts.values()),
+                    "uplinks_24h": uplinks_24h,
+                    "last_uplink": {
+                        "deveui": last_uplink[0] if last_uplink else None,
+                        "timestamp": last_uplink[1].isoformat() if last_uplink else None
+                    }
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================
+# LOCATION MANAGEMENT APIs
+# =====================================
+
+@router.get("/locations/hierarchy")
+def get_location_hierarchy():
+    """Get complete location hierarchy (sites -> floors -> rooms -> zones)"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT s.id as site_id, s.name as site_name, s.address,
+                           f.id as floor_id, f.name as floor_name,
+                           r.id as room_id, r.name as room_name,
+                           z.id as zone_id, z.name as zone_name
+                    FROM devices.sites s
+                    LEFT JOIN devices.floors f ON s.id = f.site_id
+                    LEFT JOIN devices.rooms r ON f.id = r.floor_id  
+                    LEFT JOIN devices.zones z ON r.id = z.room_id
+                    ORDER BY s.name, f.name, r.name, z.name
+                """)
+                
+                rows = cur.fetchall()
+                
+                # Build hierarchical structure
+                sites = {}
+                for row in rows:
+                    site_id, site_name, address, floor_id, floor_name, room_id, room_name, zone_id, zone_name = row
+                    
+                    if site_id not in sites:
+                        sites[site_id] = {
+                            "id": site_id,
+                            "name": site_name,
+                            "address": address,
+                            "floors": {}
+                        }
+                    
+                    if floor_id and floor_id not in sites[site_id]["floors"]:
+                        sites[site_id]["floors"][floor_id] = {
+                            "id": floor_id,
+                            "name": floor_name,
+                            "rooms": {}
+                        }
+                    
+                    if room_id and floor_id and room_id not in sites[site_id]["floors"][floor_id]["rooms"]:
+                        sites[site_id]["floors"][floor_id]["rooms"][room_id] = {
+                            "id": room_id,
+                            "name": room_name,
+                            "zones": {}
+                        }
+                    
+                    if zone_id and room_id and floor_id:
+                        sites[site_id]["floors"][floor_id]["rooms"][room_id]["zones"][zone_id] = {
+                            "id": zone_id,
+                            "name": zone_name
+                        }
+                
+                # Convert to list format
+                result = []
+                for site in sites.values():
+                    site["floors"] = list(site["floors"].values())
+                    for floor in site["floors"]:
+                        floor["rooms"] = list(floor["rooms"].values())
+                        for room in floor["rooms"]:
+                            room["zones"] = list(room["zones"].values())
+                    result.append(site)
+                
+                return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/zones")
+def get_zones():
+    """Get all zones with full location context"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT z.id, z.name as zone_name,
+                           r.name as room_name, f.name as floor_name, s.name as site_name
+                    FROM devices.zones z
+                    JOIN devices.rooms r ON z.room_id = r.id
+                    JOIN devices.floors f ON r.floor_id = f.id  
+                    JOIN devices.sites s ON f.site_id = s.id
+                    ORDER BY s.name, f.name, r.name, z.name
+                """)
+                
+                rows = cur.fetchall()
+                
+                return [
+                    {
+                        "id": row[0],
+                        "name": row[1],
+                        "full_path": f"{row[4]} / {row[3]} / {row[2]} / {row[1]}",
+                        "location": {
+                            "site": row[4],
+                            "floor": row[3], 
+                            "room": row[2],
+                            "zone": row[1]
+                        }
+                    }
+                    for row in rows
+                ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/locations/site")
+def create_site(site_data: dict):
+    """Create a new site"""
+    try:
+        name = site_data.get("name")
+        if not name:
+            raise HTTPException(status_code=400, detail="Site name is required")
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO devices.sites (name, address)
+                    VALUES (%s, %s)
+                    RETURNING id, name, address
+                """, (name, site_data.get("address")))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    "id": result[0],
+                    "name": result[1], 
+                    "address": result[2],
+                    "message": "Site created successfully"
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/locations/floor")
+def create_floor(floor_data: dict):
+    """Create a new floor"""
+    try:
+        name = floor_data.get("name")
+        site_id = floor_data.get("site_id")
+        
+        if not all([name, site_id]):
+            raise HTTPException(status_code=400, detail="Floor name and site_id are required")
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO devices.floors (name, site_id)
+                    VALUES (%s, %s)
+                    RETURNING id, name, site_id
+                """, (name, site_id))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    "id": result[0],
+                    "name": result[1],
+                    "site_id": result[2],
+                    "message": "Floor created successfully"
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/locations/room")
+def create_room(room_data: dict):
+    """Create a new room"""
+    try:
+        name = room_data.get("name")
+        floor_id = room_data.get("floor_id")
+        
+        if not all([name, floor_id]):
+            raise HTTPException(status_code=400, detail="Room name and floor_id are required")
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO devices.rooms (name, floor_id)
+                    VALUES (%s, %s)
+                    RETURNING id, name, floor_id
+                """, (name, floor_id))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    "id": result[0],
+                    "name": result[1],
+                    "floor_id": result[2],
+                    "message": "Room created successfully"
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/locations/zone")
+def create_zone(zone_data: dict):
+    """Create a new zone"""
+    try:
+        name = zone_data.get("name")
+        room_id = zone_data.get("room_id")
+        
+        if not all([name, room_id]):
+            raise HTTPException(status_code=400, detail="Zone name and room_id are required")
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO devices.zones (name, room_id)
+                    VALUES (%s, %s)
+                    RETURNING id, name, room_id
+                """, (name, room_id))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    "id": result[0],
+                    "name": result[1],
+                    "room_id": result[2],
+                    "message": "Zone created successfully"
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/devices/{deveui}/location")
+def assign_device_location(deveui: str, location_data: dict):
+    """Assign device to a zone (location)"""
+    try:
+        zone_id = location_data.get("zone_id")
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Update device location
+                cur.execute("""
+                    UPDATE devices.device_registry 
+                    SET zone_id = %s
+                    WHERE deveui = %s
+                    RETURNING deveui, zone_id
+                """, (zone_id, deveui))
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Device not found")
+                
+                # Get location details
+                if zone_id:
+                    cur.execute("""
+                        SELECT z.name as zone_name, r.name as room_name, 
+                               f.name as floor_name, s.name as site_name
+                        FROM devices.zones z
+                        JOIN devices.rooms r ON z.room_id = r.id
+                        JOIN devices.floors f ON r.floor_id = f.id
+                        JOIN devices.sites s ON f.site_id = s.id
+                        WHERE z.id = %s
+                    """, (zone_id,))
+                    
+                    location_info = cur.fetchone()
+                    location = {
+                        "zone": location_info[0],
+                        "room": location_info[1],
+                        "floor": location_info[2], 
+                        "site": location_info[3]
+                    } if location_info else None
+                else:
+                    location = None
+                
+                conn.commit()
+                
+                return {
+                    "deveui": result[0],
+                    "zone_id": result[1],
+                    "location": location,
+                    "message": "Device location updated successfully"
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# =====================================
+# CRUA ENDPOINTS (Complete the API)
+# =====================================
+
+@router.get("/sites")
+def get_sites():
+    """Get all active sites"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, name, address
+                    FROM devices.sites
+                    WHERE archived_at IS NULL
+                    ORDER BY name
+                """)
+                rows = cur.fetchall()
+                return [{"id": row[0], "name": row[1], "address": row[2]} for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sites/{site_id}")
+def get_site(site_id: int):
+    """Get individual site details"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, name, address
+                    FROM devices.sites
+                    WHERE id = %s AND archived_at IS NULL
+                """, (site_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Site not found")
+                return {"id": row[0], "name": row[1], "address": row[2]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/sites/{site_id}")
+def update_site(site_id: int, site_data: dict):
+    """Update site (creates archive entry)"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE devices.sites
+                    SET name = %s, address = %s
+                    WHERE id = %s AND archived_at IS NULL
+                    RETURNING id, name, address
+                """, (site_data.get("name"), site_data.get("address"), site_id))
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Site not found")
+                
+                conn.commit()
+                return {"id": result[0], "name": result[1], "address": result[2]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/devices/{deveui}")
+def update_device(deveui: str, device_data: dict):
+    """Update device name and type"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE devices.device_registry
+                    SET name = %s, device_type_id = %s, status = COALESCE(%s, status)
+                    WHERE deveui = %s
+                    RETURNING deveui, name, status
+                """, (
+                    device_data.get("name"),
+                    device_data.get("device_type_id"),
+                    device_data.get("status"),
+                    deveui
+                ))
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Device not found")
+                
+                conn.commit()
+                return {"deveui": result[0], "name": result[1], "status": result[2]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
